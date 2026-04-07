@@ -4,6 +4,7 @@ import { createPreview } from './preview.js';
 import { initFileTree } from './filetree.js';
 import { initToolbar } from './toolbar.js';
 import { createEditorToolbar } from './editorToolbar.js';
+import { createOutline } from './outline.js';
 
 const state = {
   files: {},
@@ -17,6 +18,7 @@ const refs = {
   preview: document.getElementById('preview'),
   fileTree: document.getElementById('file-tree'),
   toolbar: document.getElementById('toolbar'),
+  outline: document.getElementById('outline'),
 };
 
 let editorApi;
@@ -24,8 +26,10 @@ let previewApi;
 let fileTreeApi;
 let toolbarApi;
 let editorToolbarApi;
+let outlineApi;
 let renderTimer = null;
 let snapshotTimer = null;
+let outlineTimer = null;
 
 function initModules() {
   previewApi = createPreview(refs.preview);
@@ -40,6 +44,7 @@ function initModules() {
       if (!state.activeFile) return;
       state.files[state.activeFile] = doc;
       scheduleSnapshot();
+      scheduleOutlineUpdate(doc);
       if (state.autoRender) {
         scheduleRender();
       }
@@ -73,6 +78,18 @@ function initModules() {
     onDeleteFile: handleDeleteFile,
   });
 
+  outlineApi = createOutline(refs.outline);
+  outlineApi.setNavigateHandler((line) => {
+    if (!editorApi) return;
+    const { view } = editorApi;
+    const lineInfo = view.state.doc.line(line + 1); // 0-based to 1-based
+    view.dispatch({
+      selection: { anchor: lineInfo.from },
+      scrollIntoView: true,
+    });
+    view.focus();
+  });
+
   setupResizers();
 }
 
@@ -85,6 +102,13 @@ function scheduleRender({ immediate = false } = {}) {
   }
   clearTimeout(renderTimer);
   renderTimer = window.setTimeout(renderActiveFile, 500);
+}
+
+function scheduleOutlineUpdate(doc) {
+  clearTimeout(outlineTimer);
+  outlineTimer = window.setTimeout(() => {
+    outlineApi?.update(doc);
+  }, 300);
 }
 
 function scheduleSnapshot() {
@@ -125,6 +149,7 @@ function setActiveFile(filename) {
   const isReadOnly = state.readOnlyFiles.has(filename);
   editorApi?.setReadOnly(isReadOnly);
   fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles]);
+  outlineApi?.update(state.files[filename]);
 }
 
 function handleCreateFile(filename) {
@@ -223,6 +248,9 @@ async function loadConfig() {
       editorApi?.setReadOnly(isReadOnly);
     }
     toolbarApi?.setStatus('Ready', 'ready');
+    if (state.activeFile) {
+      outlineApi?.update(state.files[state.activeFile]);
+    }
     if (state.autoRender && state.activeFile) {
       renderActiveFile();
     } else {
@@ -237,7 +265,7 @@ async function loadConfig() {
 
 function setupResizers() {
   const handles = document.querySelectorAll('.drag-handle');
-  const fileTreePanel = document.getElementById('file-tree');
+  const fileTreePanel = document.querySelector('.panel.sidebar');
   const editorPanel = document.getElementById('editor');
   const previewPanel = document.getElementById('preview');
 

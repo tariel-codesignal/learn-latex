@@ -9,7 +9,8 @@ const buttons = [
   { sep: true },
   { dropdown: true },
   { sep: true },
-  { label: '∑', title: 'Inline math', wrap: ['$', '$'] },
+  { mathDropdown: true },
+  { sep: true },
   { label: '• List', title: 'Itemize', block: '\\begin{itemize}\n  \\item \n\\end{itemize}' },
 ];
 
@@ -20,6 +21,12 @@ const sectionOptions = [
   { label: 'Subsubsection', wrap: ['\\subsubsection{', '}'] },
   { label: 'Paragraph', wrap: ['\\paragraph{', '}'] },
   { label: 'Subparagraph', wrap: ['\\subparagraph{', '}'] },
+];
+
+const mathOptions = [
+  { label: 'Math mode', wrap: null },
+  { label: 'Inline math \\(...\\)', wrap: ['\\(', '\\)'] },
+  { label: 'Display math \\[...\\]', wrap: ['\\[', '\\]'] },
 ];
 
 function insertWrap(editorView, wrap) {
@@ -57,22 +64,24 @@ export function createEditorToolbar(container) {
       return;
     }
 
-    if (btn.dropdown) {
+    if (btn.dropdown || btn.mathDropdown) {
+      const options = btn.dropdown ? sectionOptions : mathOptions;
+      const resetLabel = options[0].label;
       const select = document.createElement('select');
       select.className = 'editor-toolbar-select';
-      select.title = 'Section type';
-      sectionOptions.forEach((opt) => {
+      select.title = btn.dropdown ? 'Section type' : 'Math mode';
+      options.forEach((opt) => {
         const option = document.createElement('option');
         option.textContent = opt.label;
         option.value = opt.label;
         select.appendChild(option);
       });
       select.addEventListener('change', () => {
-        const opt = sectionOptions.find((o) => o.label === select.value);
+        const opt = options.find((o) => o.label === select.value);
         if (opt?.wrap && editorViewRef) {
           insertWrap(editorViewRef, opt.wrap);
         }
-        select.value = 'Normal text';
+        select.value = resetLabel;
       });
       bar.appendChild(select);
       return;
