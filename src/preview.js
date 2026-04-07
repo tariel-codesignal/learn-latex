@@ -83,6 +83,90 @@ function ptToPx(pt) {
   return pt * (96 / 72);
 }
 
+function renderInlineLatex(snippet) {
+  const trimmed = (snippet || '').trim();
+  if (!trimmed) {
+    const fragment = document.createDocumentFragment();
+    fragment.appendChild(document.createTextNode(''));
+    return fragment;
+  }
+  try {
+    const generator = new HtmlGenerator({ hyphenate: false });
+    parse(trimmed, { generator });
+    return generator.domFragment();
+  } catch (err) {
+    console.warn('Failed to render table cell content', err);
+    const fallback = document.createDocumentFragment();
+    fallback.appendChild(document.createTextNode(trimmed.replace(/\\/g, ' ')));
+    return fallback;
+  }
+}
+
+function buildPreviewTable(tableInfo) {
+  const host = document.createElement('div');
+  host.className = 'preview-tabular-host';
+  const table = document.createElement('table');
+  table.className = 'preview-table';
+  if (tableInfo.bottomRule) {
+    table.classList.add('has-bottom-rule');
+  }
+  const tbody = document.createElement('tbody');
+  tableInfo.rows.forEach((row) => {
+    if (!row?.cells?.length) return;
+    const tr = document.createElement('tr');
+    if (row.hasTopRule) {
+      tr.classList.add('has-top-rule');
+    }
+    row.cells.forEach((cell, index) => {
+      const td = document.createElement('td');
+      const alignment = tableInfo.alignments[index]
+        || tableInfo.alignments[tableInfo.alignments.length - 1]
+        || 'left';
+      td.classList.add(`align-${alignment}`);
+      const fragment = renderInlineLatex(cell);
+      td.appendChild(fragment);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  host.appendChild(table);
+  return host;
+}
+
+function replaceTabularPlaceholders(root, tables = []) {
+  if (!tables.length) return;
+  tables.forEach((tableInfo) => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    let targetNode = null;
+    let indexInNode = -1;
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const idx = node.nodeValue.indexOf(tableInfo.placeholder);
+      if (idx !== -1) {
+        targetNode = node;
+        indexInNode = idx;
+        break;
+      }
+    }
+    if (!targetNode || indexInNode === -1) {
+      console.warn('Preview table placeholder missing:', tableInfo.placeholder);
+      return;
+    }
+    const beforeText = targetNode.nodeValue.slice(0, indexInNode);
+    const afterText = targetNode.nodeValue.slice(indexInNode + tableInfo.placeholder.length);
+    const fragment = document.createDocumentFragment();
+    if (beforeText) {
+      fragment.appendChild(document.createTextNode(beforeText));
+    }
+    fragment.appendChild(buildPreviewTable(tableInfo));
+    if (afterText) {
+      fragment.appendChild(document.createTextNode(afterText));
+    }
+    targetNode.parentNode.replaceChild(fragment, targetNode);
+  });
+}
+
 /**
  * After latex.js renders into a single page, split the .body children across
  * multiple pages if the content overflows.
@@ -172,7 +256,8 @@ export function createPreview(container) {
     });
   }
 
-  function render(content) {
+  function render(content, options = {}) {
+    const tables = options.tables ?? [];
     pageEntries = [];
     container.innerHTML = '';
 
@@ -195,6 +280,7 @@ export function createPreview(container) {
       parse(processed, { generator });
       page.appendChild(generator.domFragment());
       generator.applyLengthsAndGeometryToDom(page);
+      replaceTabularPlaceholders(page, tables);
 
       // Split into multiple pages if content overflows
       paginate(container, page);

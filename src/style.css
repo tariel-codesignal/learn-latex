@@ -703,6 +703,41 @@ body {
   min-height: calc(297mm - 72pt - 36pt); /* page height minus top padding minus page-number area */
 }
 
+.preview-tabular-host {
+  margin: 1rem 0;
+}
+
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid #ccd1de;
+  background: #fff;
+  color: #111622;
+  font-size: 0.95rem;
+}
+
+.preview-table td {
+  border: 1px solid #d4d8e4;
+  padding: 0.4rem 0.6rem;
+  vertical-align: top;
+}
+
+.preview-table td.align-center {
+  text-align: center;
+}
+
+.preview-table td.align-right {
+  text-align: right;
+}
+
+.preview-table tr.has-top-rule td {
+  border-top: 2px solid #1f2533;
+}
+
+.preview-table.has-bottom-rule tr:last-child td {
+  border-bottom: 2px solid #1f2533;
+}
+
 /* All direct children except the last bigskip+list pair are normal flow */
 .preview-page > .body > .bigskip:last-of-type {
   margin-top: auto;             /* push footnotes to the bottom */

@@ -5,6 +5,7 @@ import { createPreviewControls, ZOOM_LEVELS } from './previewControls.js';
 import { initFileTree } from './filetree.js';
 import { createEditorToolbar } from './editorToolbar.js';
 import { createOutline } from './outline.js';
+import { preprocessLatex } from './preprocess.js';
 
 const state = {
   files: {},
@@ -228,7 +229,12 @@ function renderActiveFile() {
   setStatus('Rendering...', 'busy');
   try {
     const previousPage = state.currentPage || 1;
-    const result = previewApi.render(state.files[state.activeFile] ?? '');
+    const rawContent = state.files[state.activeFile] ?? '';
+    const { content: processedContent, warnings, tables } = preprocessLatex(rawContent);
+    if (warnings.length) {
+      warnings.forEach((message) => console.warn('[preview]', message));
+    }
+    const result = previewApi.render(processedContent ?? '', { tables });
     updateRenderStatus(result);
     applyPaginationResult(result.pageCount ?? 0, previousPage);
     if (result.ok) {
