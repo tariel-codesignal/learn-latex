@@ -1,19 +1,23 @@
 {
   "name": "learn-latex",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Browser-based LaTeX editor simulator with live preview",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vite",
+    "build": "vite build",
+    "start": "node server.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
-    "express": "^5.2.1"
+    "@codemirror/commands": "^6.3.3",
+    "codemirror-lang-latex": "^0.2.0",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.27.3",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "express": "^5.2.1",
+    "latex.js": "^0.12.6"
   },
   "devDependencies": {
-    "vite": "^8.0.5"
+    "vite": "^5.4.10"
   }
 }

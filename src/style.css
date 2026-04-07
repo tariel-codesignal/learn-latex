@@ -1,0 +1,470 @@
+:root {
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+  background-color: #13151a;
+  color: #f5f5f5;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.katex,
+.katex * {
+  box-sizing: content-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #0f1117;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  background: #1d1f27;
+  border-bottom: 1px solid #2b2e3a;
+  gap: 1rem;
+}
+
+.toolbar-title {
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.button {
+  background: #3a82f7;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.45rem 1rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.1s ease;
+}
+
+.button:active {
+  transform: scale(0.98);
+}
+
+.button[disabled] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.button.is-soft {
+  background: #2b303d;
+  color: #f0f0f0;
+}
+
+.button.is-muted {
+  opacity: 0.7;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggle-switch {
+  width: 40px;
+  height: 20px;
+  background: #4a4f61;
+  border-radius: 999px;
+  position: relative;
+  transition: background 0.2s ease;
+}
+
+.toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+}
+
+.toggle input:checked + .toggle-switch {
+  background: #3a82f7;
+}
+
+.toggle input:checked + .toggle-switch::after {
+  transform: translateX(20px);
+}
+
+.status-indicator {
+  font-size: 0.85rem;
+  color: #a9afc7;
+}
+
+.status-indicator.is-busy {
+  color: #f5c26b;
+}
+
+.status-indicator.is-error {
+  color: #ff6b6b;
+}
+
+.status-indicator.is-ready {
+  color: #7dd87d;
+}
+
+.panels {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  background: #0f1117;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.panel.file-tree {
+  width: 220px;
+  background: #151822;
+  border-right: 1px solid #1f2230;
+}
+
+.panel.editor {
+  flex: 1.15;
+  background: #0f1117;
+}
+
+.panel.preview {
+  flex: 1;
+  background: #d6d9e0;
+  padding: 24px 16px;
+  overflow: auto;
+  overflow-x: hidden;
+  container-type: inline-size;
+  container-name: preview;
+  touch-action: pan-y;
+}
+
+.drag-handle {
+  width: 6px;
+  cursor: col-resize;
+  background: #1f2230;
+  transition: background 0.2s ease;
+}
+
+.drag-handle:hover {
+  background: #2d3145;
+}
+
+.file-tree-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0.65rem;
+  border-bottom: 1px solid #1f2230;
+  color: #c5c9df;
+  font-size: 0.9rem;
+}
+
+.file-tree-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.file-item {
+  padding: 0.5rem 0.85rem;
+  cursor: pointer;
+  color: #dcdff7;
+  font-size: 0.9rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.file-item:hover {
+  background: #1f2433;
+}
+
+.file-item.is-active {
+  background: #2f3650;
+  color: #fff;
+}
+
+.file-item.is-readonly {
+  opacity: 0.7;
+}
+
+.add-file-button {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px dashed #3a82f7;
+  color: #3a82f7;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.add-file-button:hover {
+  background: rgba(58, 130, 247, 0.1);
+}
+
+.context-menu {
+  position: fixed;
+  background: #1c1f2b;
+  border: 1px solid #2b3042;
+  border-radius: 6px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  z-index: 20;
+  min-width: 140px;
+  padding: 0.25rem 0;
+}
+
+.context-menu.hidden {
+  display: none;
+}
+
+.context-menu button {
+  width: 100%;
+  background: transparent;
+  border: none;
+  text-align: left;
+  padding: 0.4rem 0.85rem;
+  color: #dcdff7;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.context-menu button:hover {
+  background: #2b3042;
+}
+
+.context-menu button.is-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 5, 12, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 50;
+}
+
+.modal-overlay.hidden {
+  display: none;
+}
+
+.modal {
+  background: #161925;
+  border: 1px solid #262a3c;
+  border-radius: 12px;
+  width: min(360px, 100%);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.55);
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem;
+  gap: 1rem;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.modal-close {
+  background: transparent;
+  border: none;
+  color: #9ca2bf;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  color: #c5c9df;
+}
+
+.modal-field input {
+  border: 1px solid #2e3245;
+  border-radius: 6px;
+  padding: 0.55rem 0.65rem;
+  font-size: 0.95rem;
+  background: #10121c;
+  color: #fff;
+}
+
+.modal-field input:focus {
+  outline: none;
+  border-color: #3a82f7;
+  box-shadow: 0 0 0 1px rgba(58, 130, 247, 0.35);
+}
+
+.modal-error {
+  margin: 0;
+  color: #f07178;
+  font-size: 0.85rem;
+  min-height: 1em;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+#editor .cm-editor {
+  height: 100%;
+}
+
+/* ---------- A4 page shell ---------- */
+/* .preview-page acts as the grid container that latex.js base.css expects on
+   `body, .page`.  The grid variables (--textwidth, --marginleftwidth, etc.)
+   are set at runtime by generator.applyLengthsAndGeometryToDom().
+   The page is always laid out at its native 210 mm width so that the latex.js
+   grid percentages stay correct.  CSS `zoom` scales the whole page down when
+   the preview panel is narrower than the page + padding. */
+.preview-page {
+  /* A4 dimensions — always the "natural" size; zoom handles shrinking */
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+
+  background: #fff;
+  color: #000;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+
+  /* Same grid as latex.js base.css `body, .page` */
+  display: grid;
+  grid-template-columns:
+    [margin-left] var(--marginleftwidth)
+    [body]        var(--textwidth)
+    [margin-right] var(--marginrightwidth);
+  grid-template-rows: auto;
+
+  position: relative;
+
+  /* Zoomed in so the text is comfortable to read; the panel scrolls vertically */
+  zoom: 1.25;
+}
+
+/* Scale down proportionally as the preview panel gets narrower */
+@container preview (max-width: 1000px) { .preview-page { zoom: 1.1; } }
+@container preview (max-width: 820px)  { .preview-page { zoom: 0.92; } }
+@container preview (max-width: 680px)  { .preview-page { zoom: 0.75; } }
+@container preview (max-width: 520px)  { .preview-page { zoom: 0.58; } }
+@container preview (max-width: 400px)  { .preview-page { zoom: 0.45; } }
+
+/* The .body div that latex.js emits — sits in the "body" grid column.
+   Use flexbox so the footnote area can be pushed to the bottom. */
+.preview-page > .body {
+  grid-column: body;
+  padding-top: 72pt;   /* ≈ 1 in top margin */
+  display: flex;
+  flex-direction: column;
+  min-height: calc(297mm - 72pt - 36pt); /* page height minus top padding minus page-number area */
+}
+
+/* All direct children except the last bigskip+list pair are normal flow */
+.preview-page > .body > .bigskip:last-of-type {
+  margin-top: auto;             /* push footnotes to the bottom */
+  margin-bottom: 0;
+  padding-top: 8pt;
+  border-top: 0.4pt solid #000;
+  width: 40%;
+}
+
+/* Tighten the footnote list against the rule */
+.preview-page > .body > .list:last-child {
+  margin-top: 4pt;
+  font-size: 0.82rem;           /* \footnotesize */
+  margin-bottom: 18pt;
+}
+
+/* Page number — centered at foot of the text column, matching \pagestyle{plain} */
+.preview-page::after {
+  content: "1";
+  grid-column: body;
+  text-align: center;
+  padding-top: 12pt;
+  padding-bottom: 42pt;
+  font-family: "Computer Modern Serif", serif;
+  font-size: 10pt;
+  color: #000;
+}
+
+/* Override latex.js titlepage — 100vh makes no sense inside a panel */
+.preview-page .titlepage {
+  height: auto;
+  min-height: auto;
+  margin-bottom: 2em;
+}
+
+.preview-error {
+  color: #d33;
+  white-space: pre-wrap;
+  font-family: 'Fira Code', monospace;
+}
+
+.empty-state {
+  opacity: 0.7;
+  font-size: 0.9rem;
+  padding: 1rem;
+}
+
+@media (max-width: 960px) {
+  .panel.preview {
+    display: none;
+  }
+}
