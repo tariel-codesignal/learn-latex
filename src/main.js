@@ -1,8 +1,8 @@
 import './style.css';
 import { createEditor } from './editor.js';
 import { createPreview } from './preview.js';
+import { createPreviewControls, ZOOM_LEVELS } from './previewControls.js';
 import { initFileTree } from './filetree.js';
-import { initToolbar } from './toolbar.js';
 import { createEditorToolbar } from './editorToolbar.js';
 import { createOutline } from './outline.js';
 
@@ -12,28 +12,48 @@ const state = {
   readOnlyFiles: new Set(),
   autoRender: true,
   lastRenderResult: null,
+  pageCount: 0,
+  currentPage: 0,
+  previewZoom: 100,
 };
 
 const refs = {
   editor: document.getElementById('editor'),
+  previewControls: document.getElementById('preview-controls'),
   preview: document.getElementById('preview'),
   fileTree: document.getElementById('file-tree'),
-  toolbar: document.getElementById('toolbar'),
   outline: document.getElementById('outline'),
 };
 
 let editorApi;
 let previewApi;
+let previewControlsApi;
 let fileTreeApi;
-let toolbarApi;
 let editorToolbarApi;
 let outlineApi;
 let renderTimer = null;
 let snapshotTimer = null;
 let outlineTimer = null;
+let previewScrollRaf = null;
 
 function initModules() {
   previewApi = createPreview(refs.preview);
+
+  previewControlsApi = createPreviewControls({
+    container: refs.previewControls,
+    onCompile: () => renderActiveFile(),
+    onToggleAutoRender: (enabled) => handleAutoToggle(enabled),
+    onPageStep: (delta) => handlePageStep(delta),
+    onPageJump: (page) => goToPage(page),
+    onZoomStep: (delta) => stepPreviewZoom(delta),
+    onZoomSelect: (value) => setPreviewZoom(value),
+  });
+  previewControlsApi.setAutoRender(state.autoRender);
+  previewControlsApi.setPageInfo({ current: 0, total: 0 });
+  setPreviewZoom(state.previewZoom);
+  previewControlsApi.setStatus('Ready', 'ready');
+
+  refs.preview.addEventListener('scroll', handlePreviewScroll);
 
   editorToolbarApi = createEditorToolbar(refs.editor);
 
@@ -53,17 +73,6 @@ function initModules() {
   });
 
   editorToolbarApi.attach(editorApi.view);
-
-  toolbarApi = initToolbar({
-    container: refs.toolbar,
-    onCompile: () => renderActiveFile(),
-    onToggleAutoRender: (enabled) => {
-      state.autoRender = enabled;
-      if (enabled) {
-        scheduleRender({ immediate: true });
-      }
-    },
-  });
 
   fileTreeApi = initFileTree({
     container: refs.fileTree,
@@ -128,22 +137,124 @@ function scheduleSnapshot() {
   }, 1000);
 }
 
+function handleAutoToggle(enabled) {
+  state.autoRender = enabled;
+  previewControlsApi?.setAutoRender(enabled);
+  if (enabled) {
+    scheduleRender({ immediate: true });
+  }
+}
+
+function handlePageStep(delta) {
+  if (!state.pageCount) return;
+  const target = Math.min(Math.max((state.currentPage || 1) + delta, 1), state.pageCount);
+  goToPage(target);
+}
+
+function goToPage(pageNumber, { behavior = 'smooth' } = {}) {
+  if (!state.pageCount) return;
+  const clamped = Math.min(Math.max(pageNumber, 1), state.pageCount);
+  if (previewApi?.scrollToPage(clamped, { behavior })) {
+    state.currentPage = clamped;
+    updatePageControls();
+  }
+}
+
+function handlePreviewScroll() {
+  if (previewScrollRaf) return;
+  previewScrollRaf = window.requestAnimationFrame(() => {
+    previewScrollRaf = null;
+    syncCurrentPageFromScroll();
+  });
+}
+
+function syncCurrentPageFromScroll() {
+  const pages = previewApi?.getPages() ?? [];
+  if (!pages.length) return;
+  const scrollTop = refs.preview.scrollTop;
+  let closestIndex = 0;
+  let smallestDelta = Number.POSITIVE_INFINITY;
+  pages.forEach((page, index) => {
+    const delta = Math.abs(page.offsetTop - scrollTop);
+    if (delta < smallestDelta) {
+      smallestDelta = delta;
+      closestIndex = index;
+    }
+  });
+  const nextPage = closestIndex + 1;
+  if (nextPage !== state.currentPage) {
+    state.currentPage = nextPage;
+    updatePageControls();
+  }
+}
+
+function setPreviewZoom(percent) {
+  const clamped = Math.min(Math.max(percent, ZOOM_LEVELS[0]), ZOOM_LEVELS[ZOOM_LEVELS.length - 1]);
+  state.previewZoom = clamped;
+  previewApi?.setZoom(clamped / 100);
+  previewControlsApi?.setZoom(clamped);
+  updateZoomButtons();
+}
+
+function stepPreviewZoom(direction) {
+  const currentIndex = ZOOM_LEVELS.indexOf(state.previewZoom);
+  if (currentIndex === -1) {
+    setPreviewZoom(100);
+    return;
+  }
+  const nextIndex = Math.min(Math.max(currentIndex + direction, 0), ZOOM_LEVELS.length - 1);
+  setPreviewZoom(ZOOM_LEVELS[nextIndex]);
+}
+
+function updateZoomButtons() {
+  const min = ZOOM_LEVELS[0];
+  const max = ZOOM_LEVELS[ZOOM_LEVELS.length - 1];
+  previewControlsApi?.setZoomControlsState({
+    canZoomIn: state.previewZoom < max,
+    canZoomOut: state.previewZoom > min,
+  });
+}
+
+function updatePageControls() {
+  previewControlsApi?.setPageInfo({ current: state.currentPage, total: state.pageCount });
+}
+
+function setStatus(text, type = 'ready') {
+  previewControlsApi?.setStatus(text, type);
+}
+
 function renderActiveFile() {
   if (!state.activeFile) return;
-  toolbarApi?.setStatus('Rendering...', 'busy');
+  setStatus('Rendering...', 'busy');
   try {
+    const previousPage = state.currentPage || 1;
     const result = previewApi.render(state.files[state.activeFile] ?? '');
     updateRenderStatus(result);
+    applyPaginationResult(result.pageCount ?? 0, previousPage);
     if (result.ok) {
-      toolbarApi?.setStatus('Ready', 'ready');
+      setStatus('Ready', 'ready');
     } else {
-      toolbarApi?.setStatus('Error', 'error');
+      setStatus('Error', 'error');
     }
   } catch (err) {
     updateRenderStatus({ ok: false, error: err?.message || 'Failed to render document.' });
-    toolbarApi?.setStatus('Error', 'error');
+    applyPaginationResult(0, 1);
+    setStatus('Error', 'error');
     console.error(err);
   }
+}
+
+function applyPaginationResult(pageCount, previousPage = 1) {
+  state.pageCount = pageCount;
+  if (!pageCount) {
+    state.currentPage = 0;
+    updatePageControls();
+    return;
+  }
+  const desiredPage = Math.min(Math.max(previousPage, 1), pageCount);
+  state.currentPage = desiredPage || 1;
+  previewApi?.scrollToPage(state.currentPage, { behavior: 'auto' });
+  updatePageControls();
 }
 
 function updateRenderStatus(result) {
@@ -238,13 +349,14 @@ function handleDeleteFile(filename) {
 
 function renderEmptyPreviewIfNoFiles() {
   if (Object.keys(state.files).length === 0) {
-    previewApi.render('');
-    toolbarApi?.setStatus('Ready', 'ready');
+    const result = previewApi.render('');
+    applyPaginationResult(result.pageCount ?? 0, 1);
+    setStatus('Ready', 'ready');
   }
 }
 
 async function loadConfig() {
-  toolbarApi?.setStatus('Loading...', 'busy');
+  setStatus('Loading...', 'busy');
   try {
     const res = await fetch('/config');
     if (!res.ok) throw new Error(`Request failed with ${res.status}`);
@@ -261,7 +373,7 @@ async function loadConfig() {
       const isReadOnly = state.readOnlyFiles.has(state.activeFile);
       editorApi?.setReadOnly(isReadOnly);
     }
-    toolbarApi?.setStatus('Ready', 'ready');
+    setStatus('Ready', 'ready');
     if (state.activeFile) {
       outlineApi?.update(state.files[state.activeFile]);
     }
@@ -272,7 +384,7 @@ async function loadConfig() {
     }
   } catch (err) {
     console.error(err);
-    toolbarApi?.setStatus('Error loading config', 'error');
+    setStatus('Error loading config', 'error');
     previewApi.render('');
   }
 }
@@ -281,7 +393,7 @@ function setupResizers() {
   const handles = document.querySelectorAll('.drag-handle');
   const fileTreePanel = document.querySelector('.panel.sidebar');
   const editorPanel = document.getElementById('editor');
-  const previewPanel = document.getElementById('preview');
+  const previewPanel = document.getElementById('preview-panel');
 
   handles.forEach((handle) => {
     handle.addEventListener('mousedown', (event) => {

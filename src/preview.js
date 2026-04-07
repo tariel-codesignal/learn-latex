@@ -87,7 +87,7 @@ function ptToPx(pt) {
  * After latex.js renders into a single page, split the .body children across
  * multiple pages if the content overflows.
  */
-function paginate(container, firstPage, generator) {
+function paginate(container, firstPage) {
   const body = firstPage.querySelector('.body');
   if (!body) return;
 
@@ -147,40 +147,92 @@ function paginate(container, firstPage, generator) {
 
 export function createPreview(container) {
   container.innerHTML = '';
+  let pageEntries = [];
+  let zoom = 1;
+
+  function applyZoom() {
+    pageEntries.forEach((entry) => {
+      entry.page.style.transform = `scale(${zoom})`;
+      entry.page.style.transformOrigin = 'top center';
+      entry.wrapper.style.height = `${entry.baseHeight * zoom}px`;
+    });
+  }
+
+  function buildPageEntries() {
+    const rawPages = Array.from(container.querySelectorAll('.preview-page'));
+    pageEntries = rawPages.map((page) => {
+      page.style.transform = '';
+      page.style.transformOrigin = 'top center';
+      const baseHeight = page.offsetHeight;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'preview-page-wrapper';
+      page.parentNode.insertBefore(wrapper, page);
+      wrapper.appendChild(page);
+      return { page, wrapper, baseHeight };
+    });
+  }
 
   function render(content) {
+    pageEntries = [];
     container.innerHTML = '';
-    const page = document.createElement('div');
-    page.className = 'preview-page page';
-    container.appendChild(page);
 
     if (!content || !content.trim()) {
-      page.innerHTML = '<p class="empty-state" style="color:#666">Start typing LaTeX to see a preview.</p>';
-      return { ok: true };
+      const emptyState = document.createElement('p');
+      emptyState.className = 'empty-state';
+      emptyState.textContent = 'Start typing LaTeX to see a preview.';
+      container.appendChild(emptyState);
+      return { ok: true, pageCount: 0 };
     }
 
     const processed = preprocessFootnotes(content);
 
     try {
+      const page = document.createElement('div');
+      page.className = 'preview-page page';
+      container.appendChild(page);
+
       const generator = new HtmlGenerator({ hyphenate: false });
       parse(processed, { generator });
       page.appendChild(generator.domFragment());
       generator.applyLengthsAndGeometryToDom(page);
 
       // Split into multiple pages if content overflows
-      paginate(container, page, generator);
+      paginate(container, page);
 
-      return { ok: true };
+      buildPageEntries();
+      applyZoom();
+      return { ok: true, pageCount: pageEntries.length };
     } catch (err) {
       console.error('LaTeX.js render error', err);
-      page.innerHTML = '';
       const errorEl = document.createElement('div');
       errorEl.className = 'preview-error';
       errorEl.textContent = err.message || 'Failed to render document.';
-      page.appendChild(errorEl);
-      return { ok: false, error: err.message };
+      container.appendChild(errorEl);
+      return { ok: false, error: err.message, pageCount: 0 };
     }
   }
 
-  return { render };
+  function setZoom(value) {
+    zoom = value;
+    applyZoom();
+  }
+
+  function scrollToPage(pageNumber, { behavior = 'smooth' } = {}) {
+    if (!pageEntries.length) return false;
+    const target = pageEntries[pageNumber - 1]?.wrapper;
+    if (!target) return false;
+    container.scrollTo({ top: target.offsetTop, behavior });
+    return true;
+  }
+
+  function getPages() {
+    return pageEntries.map((entry) => entry.wrapper);
+  }
+
+  return {
+    render,
+    setZoom,
+    scrollToPage,
+    getPages,
+  };
 }

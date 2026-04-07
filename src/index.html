@@ -8,7 +8,6 @@
   </head>
   <body>
     <div id="app">
-      <header id="toolbar" class="toolbar"></header>
       <div class="panels">
         <div class="panel sidebar">
           <section class="sidebar-files" id="file-tree"></section>
@@ -17,7 +16,10 @@
         <div class="drag-handle" data-handle="file-editor" title="Resize panels"></div>
         <section class="panel editor" id="editor"></section>
         <div class="drag-handle" data-handle="editor-preview" title="Resize panels"></div>
-        <section class="panel preview" id="preview"></section>
+        <section class="panel preview" id="preview-panel">
+          <div class="preview-toolbar" id="preview-controls"></div>
+          <div class="preview-scroll" id="preview"></div>
+        </section>
       </div>
     </div>
     <script type="module" src="./main.js"></script>

@@ -184,12 +184,151 @@ body {
 .panel.preview {
   flex: 1;
   background: #d6d9e0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0.85rem;
+  background: #171a23;
+  border-bottom: 1px solid #1f232f;
+  color: #e2e5f5;
+  gap: 0.75rem;
+}
+
+.preview-controls-left,
+.preview-controls-right {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.preview-controls-right {
+  gap: 0.4rem;
+}
+
+.preview-status {
+  font-size: 0.85rem;
+  color: #6e7896;
+}
+
+.preview-status.is-busy {
+  color: #b37b2f;
+}
+
+.preview-status.is-error {
+  color: #c4453d;
+}
+
+.preview-status.is-ready {
+  color: #31824a;
+}
+
+.preview-scroll {
+  flex: 1;
   padding: 24px 16px;
-  overflow: auto;
+  overflow-y: auto;
   overflow-x: hidden;
-  container-type: inline-size;
-  container-name: preview;
+  background: #d6d9e0;
   touch-action: pan-y;
+}
+
+.preview-page-wrapper {
+  width: 100%;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow: visible;
+}
+
+.preview-page-wrapper + .preview-page-wrapper {
+  margin-top: 24px;
+}
+
+.preview-toolbar .button,
+.preview-icon-button {
+  border: 1px solid #2a2f47;
+  background: #222637;
+  color: #f4f6ff;
+  border-radius: 6px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  padding: 0 0.9rem;
+}
+
+.preview-toolbar .button {
+  min-width: 90px;
+  font-weight: 600;
+  padding: 0 1rem;
+}
+
+.preview-toolbar .button.is-muted {
+  opacity: 0.55;
+}
+
+.preview-icon-button {
+  width: 32px;
+  padding: 0;
+}
+
+.preview-toolbar .button:hover:not(:disabled),
+.preview-icon-button:hover:not(:disabled) {
+  background: #2c3146;
+}
+
+.preview-icon-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.preview-page-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.88rem;
+  color: #b6bcd5;
+}
+
+.preview-page-indicator input {
+  width: 3rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid #2a2f47;
+  border-radius: 4px;
+  background: #141724;
+  color: #f4f6ff;
+  text-align: center;
+}
+
+.preview-page-indicator input:disabled {
+  background: #1c1f2b;
+  color: #5d6378;
+}
+
+.preview-page-total {
+  opacity: 0.7;
+}
+
+.preview-zoom-select {
+  border: 1px solid #2a2f47;
+  border-radius: 4px;
+  background: #141724;
+  color: #f4f6ff;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.88rem;
+}
+
+.preview-toolbar .toggle-label {
+  color: #c9cee4;
 }
 
 .drag-handle {
@@ -529,10 +668,10 @@ body {
    `body, .page`.  The grid variables (--textwidth, --marginleftwidth, etc.)
    are set at runtime by generator.applyLengthsAndGeometryToDom().
    The page is always laid out at its native 210 mm width so that the latex.js
-   grid percentages stay correct.  CSS `zoom` scales the whole page down when
-   the preview panel is narrower than the page + padding. */
+   grid percentages stay correct; runtime JS applies a scale transform so the
+   sheet grows/shrinks without triggering new line breaks. */
 .preview-page {
-  /* A4 dimensions — always the "natural" size; zoom handles shrinking */
+  /* A4 dimensions — always the "natural" size; JS scaling handles shrinking */
   width: 210mm;
   min-height: 297mm;
   margin: 0 auto;
@@ -550,17 +689,9 @@ body {
   grid-template-rows: auto;
 
   position: relative;
+  transform-origin: top center;
 
-  /* Zoomed in so the text is comfortable to read; the panel scrolls vertically */
-  zoom: 1.25;
 }
-
-/* Scale down proportionally as the preview panel gets narrower */
-@container preview (max-width: 1000px) { .preview-page { zoom: 1.1; } }
-@container preview (max-width: 820px)  { .preview-page { zoom: 0.92; } }
-@container preview (max-width: 680px)  { .preview-page { zoom: 0.75; } }
-@container preview (max-width: 520px)  { .preview-page { zoom: 0.58; } }
-@container preview (max-width: 400px)  { .preview-page { zoom: 0.45; } }
 
 /* The .body div that latex.js emits — sits in the "body" grid column.
    Use flexbox so the footnote area can be pushed to the bottom. */
@@ -588,13 +719,8 @@ body {
   margin-bottom: 18pt;
 }
 
-/* Spacing between pages */
-.preview-page + .preview-page {
-  margin-top: 24px;
-}
-
 /* Continuation pages don't need as much top padding since there's no title */
-.preview-page + .preview-page > .body {
+.preview-page-wrapper + .preview-page-wrapper .preview-page > .body {
   padding-top: 72pt;
 }
 
