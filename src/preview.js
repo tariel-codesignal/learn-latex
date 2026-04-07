@@ -75,6 +75,76 @@ function preprocessFootnotes(content) {
   return result + footnotesLatex;
 }
 
+// Height of the usable content area per page (A4 minus top padding minus page-number area).
+// 297mm ≈ 841.89pt; top padding = 72pt; page-number footer ≈ 54pt → ~716pt usable.
+const PAGE_CONTENT_HEIGHT_PT = 716;
+
+function ptToPx(pt) {
+  return pt * (96 / 72);
+}
+
+/**
+ * After latex.js renders into a single page, split the .body children across
+ * multiple pages if the content overflows.
+ */
+function paginate(container, firstPage, generator) {
+  const body = firstPage.querySelector('.body');
+  if (!body) return;
+
+  const maxHeight = ptToPx(PAGE_CONTENT_HEIGHT_PT);
+
+  // Collect all children into an array (we'll redistribute them)
+  const children = Array.from(body.children);
+  if (!children.length) return;
+
+  // Measure: walk children and find where page breaks are needed
+  const pages = [[]];
+  let currentHeight = 0;
+
+  children.forEach((child) => {
+    const rect = child.getBoundingClientRect();
+    const style = getComputedStyle(child);
+    const marginTop = parseFloat(style.marginTop) || 0;
+    const marginBottom = parseFloat(style.marginBottom) || 0;
+    const totalHeight = rect.height + marginTop + marginBottom;
+
+    if (currentHeight + totalHeight > maxHeight && pages[pages.length - 1].length > 0) {
+      pages.push([]);
+      currentHeight = 0;
+    }
+
+    pages[pages.length - 1].push(child);
+    currentHeight += totalHeight;
+  });
+
+  // If everything fits on one page, nothing to do
+  if (pages.length <= 1) return;
+
+  // Read grid CSS variables from first page to copy to new pages
+  const computedStyle = getComputedStyle(firstPage);
+  const cssVarsToCopy = ['--textwidth', '--marginleftwidth', '--marginrightwidth',
+    '--marginparwidth', '--marginparsep', '--parindent'];
+  const varValues = {};
+  cssVarsToCopy.forEach((v) => { varValues[v] = computedStyle.getPropertyValue(v); });
+
+  // Rebuild: first page keeps page 1 children, new pages for the rest
+  body.innerHTML = '';
+  pages[0].forEach((child) => body.appendChild(child));
+
+  for (let i = 1; i < pages.length; i += 1) {
+    const newPage = document.createElement('div');
+    newPage.className = 'preview-page page';
+    // Copy grid CSS variables
+    Object.entries(varValues).forEach(([k, v]) => { if (v) newPage.style.setProperty(k, v); });
+
+    const newBody = document.createElement('div');
+    newBody.className = 'body';
+    pages[i].forEach((child) => newBody.appendChild(child));
+    newPage.appendChild(newBody);
+    container.appendChild(newPage);
+  }
+}
+
 export function createPreview(container) {
   container.innerHTML = '';
 
@@ -96,6 +166,10 @@ export function createPreview(container) {
       parse(processed, { generator });
       page.appendChild(generator.domFragment());
       generator.applyLengthsAndGeometryToDom(page);
+
+      // Split into multiple pages if content overflows
+      paginate(container, page, generator);
+
       return { ok: true };
     } catch (err) {
       console.error('LaTeX.js render error', err);

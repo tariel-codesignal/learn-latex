@@ -3,6 +3,7 @@ import { createEditor } from './editor.js';
 import { createPreview } from './preview.js';
 import { initFileTree } from './filetree.js';
 import { initToolbar } from './toolbar.js';
+import { createEditorToolbar } from './editorToolbar.js';
 
 const state = {
   files: {},
@@ -22,11 +23,14 @@ let editorApi;
 let previewApi;
 let fileTreeApi;
 let toolbarApi;
+let editorToolbarApi;
 let renderTimer = null;
 let snapshotTimer = null;
 
 function initModules() {
   previewApi = createPreview(refs.preview);
+
+  editorToolbarApi = createEditorToolbar(refs.editor);
 
   editorApi = createEditor({
     parent: refs.editor,
@@ -41,6 +45,8 @@ function initModules() {
       }
     },
   });
+
+  editorToolbarApi.attach(editorApi.view);
 
   toolbarApi = initToolbar({
     container: refs.toolbar,
