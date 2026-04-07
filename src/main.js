@@ -11,6 +11,7 @@ const state = {
   activeFile: '',
   readOnlyFiles: new Set(),
   autoRender: true,
+  lastRenderResult: null,
 };
 
 const refs = {
@@ -117,6 +118,7 @@ function scheduleSnapshot() {
     const payload = {
       files: state.files,
       activeFile: state.activeFile,
+      lastRenderResult: state.lastRenderResult,
     };
     fetch('/snapshot', {
       method: 'POST',
@@ -131,15 +133,27 @@ function renderActiveFile() {
   toolbarApi?.setStatus('Rendering...', 'busy');
   try {
     const result = previewApi.render(state.files[state.activeFile] ?? '');
+    updateRenderStatus(result);
     if (result.ok) {
       toolbarApi?.setStatus('Ready', 'ready');
     } else {
       toolbarApi?.setStatus('Error', 'error');
     }
   } catch (err) {
+    updateRenderStatus({ ok: false, error: err?.message || 'Failed to render document.' });
     toolbarApi?.setStatus('Error', 'error');
     console.error(err);
   }
+}
+
+function updateRenderStatus(result) {
+  const base = {
+    ok: Boolean(result?.ok),
+    error: result?.ok ? null : (result?.error || 'Failed to render document.'),
+    file: state.activeFile,
+    timestamp: new Date().toISOString(),
+  };
+  state.lastRenderResult = base;
 }
 
 function setActiveFile(filename) {

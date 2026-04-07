@@ -12,6 +12,17 @@ const configPath = path.join(__dirname, 'config.json');
 
 let snapshot = null;
 
+function normalizeRenderResult(status) {
+  if (!status || typeof status !== 'object') return null;
+  const ok = Boolean(status.ok);
+  return {
+    ok,
+    error: ok ? null : (typeof status.error === 'string' ? status.error : null),
+    file: typeof status.file === 'string' ? status.file : '',
+    timestamp: typeof status.timestamp === 'string' ? status.timestamp : null,
+  };
+}
+
 app.use(express.json({ limit: '2mb' }));
 
 async function readConfig() {
@@ -30,20 +41,24 @@ app.get('/config', async (req, res) => {
 });
 
 app.post('/snapshot', (req, res) => {
-  const { files, activeFile } = req.body || {};
+  const { files, activeFile, lastRenderResult } = req.body || {};
   if (!files || typeof files !== 'object') {
     return res.status(400).json({ error: 'Invalid payload' });
   }
-  snapshot = { files, activeFile: activeFile ?? '' };
+  snapshot = {
+    files,
+    activeFile: activeFile ?? '',
+    lastRenderResult: normalizeRenderResult(lastRenderResult),
+  };
   res.json({ status: 'ok' });
 });
 
 app.get('/snapshot', (req, res) => {
-  res.json(snapshot ?? { files: {}, activeFile: '' });
+  res.json(snapshot ?? { files: {}, activeFile: '', lastRenderResult: null });
 });
 
 app.get('/content', (req, res) => {
-  res.json(snapshot ?? { files: {}, activeFile: '' });
+  res.json(snapshot ?? { files: {}, activeFile: '', lastRenderResult: null });
 });
 
 if (isProduction) {
