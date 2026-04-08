@@ -4,8 +4,8 @@ const buttons = [
   { label: '↩', title: 'Undo', command: undo },
   { label: '↪', title: 'Redo', command: redo },
   { sep: true },
-  { label: 'B', title: 'Bold', wrap: ['\\textbf{', '}'] },
-  { label: 'I', title: 'Italic', wrap: ['\\textit{', '}'] },
+  { label: 'B', title: 'Bold', wrap: ['\\textbf{', '}'], toggle: true },
+  { label: 'I', title: 'Italic', wrap: ['\\textit{', '}'], toggle: true },
   { sep: true },
   { dropdown: true },
   { sep: true },
@@ -29,26 +29,59 @@ const mathOptions = [
   { label: 'Display math \\[...\\]', wrap: ['\\[', '\\]'] },
 ];
 
-function insertWrap(editorView, wrap) {
+function insertWrap(editorView, wrap, options = {}) {
   editorView.focus();
   const { state } = editorView;
   const range = state.selection.main;
   const [open, close] = wrap;
   const selected = state.sliceDoc(range.from, range.to);
+  const toggle = options.toggle ?? false;
+
+  const removeSelectionWrap = (from, to, innerText) => {
+    editorView.dispatch({
+      changes: { from, to, insert: innerText },
+      selection: { anchor: from, head: from + innerText.length },
+    });
+  };
 
   if (selected) {
+    if (
+      toggle &&
+      selected.startsWith(open) &&
+      selected.endsWith(close)
+    ) {
+      const inner = selected.slice(open.length, selected.length - close.length);
+      removeSelectionWrap(range.from, range.to, inner);
+      return;
+    }
+
+    if (toggle) {
+      const beforeStart = range.from - open.length;
+      const afterEnd = range.to + close.length;
+      if (
+        beforeStart >= 0 &&
+        afterEnd <= state.doc.length &&
+        state.sliceDoc(beforeStart, range.from) === open &&
+        state.sliceDoc(range.to, afterEnd) === close
+      ) {
+        removeSelectionWrap(beforeStart, afterEnd, selected);
+        return;
+      }
+    }
+
     const wrapped = open + selected + close;
     editorView.dispatch({
       changes: { from: range.from, to: range.to, insert: wrapped },
       selection: { anchor: range.from + open.length, head: range.from + open.length + selected.length },
     });
-  } else {
-    const inserted = open + close;
-    editorView.dispatch({
-      changes: { from: range.from, insert: inserted },
-      selection: { anchor: range.from + open.length },
-    });
+    return;
   }
+
+  const inserted = open + close;
+  editorView.dispatch({
+    changes: { from: range.from, insert: inserted },
+    selection: { anchor: range.from + open.length },
+  });
 }
 
 export function createEditorToolbar(container) {
@@ -126,7 +159,7 @@ export function createEditorToolbar(container) {
       }
 
       if (btn.wrap) {
-        insertWrap(editorView, btn.wrap);
+        insertWrap(editorView, btn.wrap, { toggle: btn.toggle });
       }
     });
   }
