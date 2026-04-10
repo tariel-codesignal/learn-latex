@@ -673,6 +673,7 @@ body {
 .preview-page {
   /* A4 dimensions — always the "natural" size; JS scaling handles shrinking */
   width: 210mm;
+  height: 297mm;
   min-height: 297mm;
   margin: 0 auto;
 
@@ -701,6 +702,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: calc(297mm - 72pt - 36pt); /* page height minus top padding minus page-number area */
+  height: calc(297mm - 72pt - 36pt);
 }
 
 .preview-tabular-host {

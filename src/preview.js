@@ -78,6 +78,7 @@ function preprocessFootnotes(content) {
 // Height of the usable content area per page (A4 minus top padding minus page-number area).
 // 297mm ≈ 841.89pt; top padding = 72pt; page-number footer ≈ 54pt → ~716pt usable.
 const PAGE_CONTENT_HEIGHT_PT = 716;
+const PAGE_NATURAL_WIDTH_PX = (210 / 25.4) * 96; // 210mm → px
 
 function ptToPx(pt) {
   return pt * (96 / 72);
@@ -232,13 +233,19 @@ function paginate(container, firstPage) {
 export function createPreview(container) {
   container.innerHTML = '';
   let pageEntries = [];
-  let zoom = 1;
+  let manualZoom = 1;
+  let autoScale = 1;
+  const resizeObserver = new ResizeObserver(() => {
+    updateAutoScale();
+  });
+  resizeObserver.observe(container);
 
   function applyZoom() {
+    const effective = manualZoom * autoScale;
     pageEntries.forEach((entry) => {
-      entry.page.style.transform = `scale(${zoom})`;
+      entry.page.style.transform = `scale(${effective})`;
       entry.page.style.transformOrigin = 'top center';
-      entry.wrapper.style.height = `${entry.baseHeight * zoom}px`;
+      entry.wrapper.style.height = `${entry.baseHeight * effective}px`;
     });
   }
 
@@ -248,12 +255,14 @@ export function createPreview(container) {
       page.style.transform = '';
       page.style.transformOrigin = 'top center';
       const baseHeight = page.offsetHeight;
+      const baseWidth = page.offsetWidth;
       const wrapper = document.createElement('div');
       wrapper.className = 'preview-page-wrapper';
       page.parentNode.insertBefore(wrapper, page);
       wrapper.appendChild(page);
-      return { page, wrapper, baseHeight };
+      return { page, wrapper, baseHeight, baseWidth };
     });
+    updateAutoScale(true);
   }
 
   function render(content, options = {}) {
@@ -299,7 +308,7 @@ export function createPreview(container) {
   }
 
   function setZoom(value) {
-    zoom = value;
+    manualZoom = value;
     applyZoom();
   }
 
@@ -313,6 +322,27 @@ export function createPreview(container) {
 
   function getPages() {
     return pageEntries.map((entry) => entry.wrapper);
+  }
+
+  function updateAutoScale(force = false) {
+    if (!pageEntries.length) {
+      if (autoScale !== 1) {
+        autoScale = 1;
+        if (force) applyZoom();
+      }
+      return;
+    }
+
+    const style = getComputedStyle(container);
+    const paddingLeft = parseFloat(style.paddingLeft) || 0;
+    const paddingRight = parseFloat(style.paddingRight) || 0;
+    const availableWidth = Math.max(container.clientWidth - paddingLeft - paddingRight, 0);
+    const baseWidth = pageEntries[0].baseWidth || PAGE_NATURAL_WIDTH_PX;
+    const nextScale = Math.min(1, Math.max(availableWidth / baseWidth, 0.1));
+    if (Math.abs(nextScale - autoScale) > 0.01 || force) {
+      autoScale = nextScale;
+      applyZoom();
+    }
   }
 
   return {
