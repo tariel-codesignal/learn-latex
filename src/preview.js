@@ -77,8 +77,14 @@ function preprocessFootnotes(content) {
 
 // Height of the usable content area per page (A4 minus top padding minus page-number area).
 // 297mm ≈ 841.89pt; top padding = 72pt; page-number footer ≈ 54pt → ~716pt usable.
+const PAPER_WIDTH_MM = 210;
+const PAPER_HEIGHT_MM = 297;
+const PAPER_WIDTH_CSS = `${PAPER_WIDTH_MM}mm`;
 const PAGE_CONTENT_HEIGHT_PT = 716;
-const PAGE_NATURAL_WIDTH_PX = (210 / 25.4) * 96; // 210mm → px
+const PAGE_ASPECT_RATIO = PAPER_HEIGHT_MM / PAPER_WIDTH_MM;
+const PAGE_NATURAL_WIDTH_PX = (PAPER_WIDTH_MM / 25.4) * 96;
+const MIN_AUTO_SCALE = 1;
+const MAX_AUTO_SCALE = 1;
 
 function ptToPx(pt) {
   return pt * (96 / 72);
@@ -219,6 +225,7 @@ function paginate(container, firstPage) {
   for (let i = 1; i < pages.length; i += 1) {
     const newPage = document.createElement('div');
     newPage.className = 'preview-page page';
+    newPage.style.setProperty('--paperwidth', PAPER_WIDTH_CSS);
     // Copy grid CSS variables
     Object.entries(varValues).forEach(([k, v]) => { if (v) newPage.style.setProperty(k, v); });
 
@@ -235,6 +242,10 @@ export function createPreview(container) {
   let pageEntries = [];
   let manualZoom = 1;
   let autoScale = 1;
+  function lockPageWidth(page) {
+    if (!page) return;
+    page.style.setProperty('--paperwidth', PAPER_WIDTH_CSS);
+  }
   const resizeObserver = new ResizeObserver(() => {
     updateAutoScale();
   });
@@ -244,7 +255,8 @@ export function createPreview(container) {
     const effective = manualZoom * autoScale;
     pageEntries.forEach((entry) => {
       entry.page.style.transform = `scale(${effective})`;
-      entry.page.style.transformOrigin = 'top center';
+      entry.page.style.transformOrigin = 'top left';
+      entry.wrapper.style.width = `${entry.baseWidth * effective}px`;
       entry.wrapper.style.height = `${entry.baseHeight * effective}px`;
     });
   }
@@ -253,9 +265,9 @@ export function createPreview(container) {
     const rawPages = Array.from(container.querySelectorAll('.preview-page'));
     pageEntries = rawPages.map((page) => {
       page.style.transform = '';
-      page.style.transformOrigin = 'top center';
-      const baseHeight = page.offsetHeight;
-      const baseWidth = page.offsetWidth;
+      page.style.transformOrigin = 'top left';
+      const baseWidth = PAGE_NATURAL_WIDTH_PX;
+      const baseHeight = baseWidth * PAGE_ASPECT_RATIO;
       const wrapper = document.createElement('div');
       wrapper.className = 'preview-page-wrapper';
       page.parentNode.insertBefore(wrapper, page);
@@ -289,6 +301,7 @@ export function createPreview(container) {
       parse(processed, { generator });
       page.appendChild(generator.domFragment());
       generator.applyLengthsAndGeometryToDom(page);
+      lockPageWidth(page);
       replaceTabularPlaceholders(page, tables);
 
       // Split into multiple pages if content overflows
@@ -296,6 +309,7 @@ export function createPreview(container) {
 
       buildPageEntries();
       applyZoom();
+      centerHorizontalScroll();
       return { ok: true, pageCount: pageEntries.length };
     } catch (err) {
       console.error('LaTeX.js render error', err);
@@ -309,7 +323,19 @@ export function createPreview(container) {
 
   function setZoom(value) {
     manualZoom = value;
-    applyZoom();
+    updateAutoScale(true);
+    centerHorizontalScroll();
+  }
+
+  function centerHorizontalScroll() {
+    // After layout, center the horizontal scroll so the page feels centered
+    // even when it overflows the column (pinned-left + scroll offset == centered).
+    window.requestAnimationFrame(() => {
+      const overflow = container.scrollWidth - container.clientWidth;
+      if (overflow > 0) {
+        container.scrollLeft = overflow / 2;
+      }
+    });
   }
 
   function scrollToPage(pageNumber, { behavior = 'smooth' } = {}) {
@@ -333,12 +359,7 @@ export function createPreview(container) {
       return;
     }
 
-    const style = getComputedStyle(container);
-    const paddingLeft = parseFloat(style.paddingLeft) || 0;
-    const paddingRight = parseFloat(style.paddingRight) || 0;
-    const availableWidth = Math.max(container.clientWidth - paddingLeft - paddingRight, 0);
-    const baseWidth = pageEntries[0].baseWidth || PAGE_NATURAL_WIDTH_PX;
-    const nextScale = Math.min(1, Math.max(availableWidth / baseWidth, 0.1));
+    const nextScale = 1;
     if (Math.abs(nextScale - autoScale) > 0.01 || force) {
       autoScale = nextScale;
       applyZoom();

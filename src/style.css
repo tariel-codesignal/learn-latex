@@ -144,6 +144,39 @@ body {
   display: flex;
   min-height: 0;
   background: #0f1117;
+  position: relative;
+}
+
+
+.sidebar-toggle {
+  position: sticky;
+  top: 10px;
+  align-self: flex-start;
+  margin: 8px 8px 0 8px;
+  z-index: 5;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid #2b2e3a;
+  background: #1d1f27;
+  color: #c5c9df;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.sidebar-toggle:hover {
+  background: #2b303d;
+  color: #fff;
+}
+
+.panels.is-sidebar-collapsed .panel.sidebar,
+.panels.is-sidebar-collapsed .drag-handle[data-handle="file-editor"] {
+  display: none;
 }
 
 .panel {
@@ -177,16 +210,25 @@ body {
 }
 
 .panel.editor {
-  flex: 1.15;
+  flex: 1.15 1 0;
   background: #0f1117;
 }
 
 .panel.preview {
-  flex: 1;
+  flex: 1 1 0;
   background: #d6d9e0;
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+@media (max-width: 1400px) {
+  .panel.editor {
+    flex: 1 1 0;
+  }
+  .panel.preview {
+    flex: 1.1 1 0;
+  }
 }
 
 .preview-toolbar {
@@ -230,28 +272,26 @@ body {
 
 .preview-scroll {
   flex: 1;
-  padding: 24px 16px;
+  padding: 24px 8px;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
   background: #d6d9e0;
   touch-action: pan-y;
 }
 
 .preview-page-wrapper {
-  width: 100%;
   position: relative;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  overflow: visible;
+  display: block;
+  margin: 0 auto;
+  overflow: hidden;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
 }
 
 .preview-page-wrapper + .preview-page-wrapper {
   margin-top: 24px;
 }
 
-.preview-toolbar .button,
-.preview-icon-button {
+.preview-toolbar .button {
   border: 1px solid #2a2f47;
   background: #222637;
   color: #f4f6ff;
@@ -263,13 +303,13 @@ body {
   font-size: 0.9rem;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
-  padding: 0 0.9rem;
-}
-
-.preview-toolbar .button {
   min-width: 90px;
   font-weight: 600;
   padding: 0 1rem;
+}
+
+.preview-toolbar .button:hover:not(:disabled) {
+  background: #2c3146;
 }
 
 .preview-toolbar .button.is-muted {
@@ -277,13 +317,31 @@ body {
 }
 
 .preview-icon-button {
-  width: 32px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #c5c9df;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
   padding: 0;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
-.preview-toolbar .button:hover:not(:disabled),
 .preview-icon-button:hover:not(:disabled) {
-  background: #2c3146;
+  background: #2b303d;
+  border-color: #3a3f52;
+  color: #fff;
+}
+
+.preview-icon-button:active:not(:disabled) {
+  background: #353b4e;
 }
 
 .preview-icon-button:disabled {
@@ -346,7 +404,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem 0.65rem;
+  padding: 0.75rem 0.65rem 0.75rem 2.65rem;
   border-bottom: 1px solid #1f2230;
   color: #c5c9df;
   font-size: 0.9rem;
@@ -673,13 +731,14 @@ body {
 .preview-page {
   /* A4 dimensions — always the "natural" size; JS scaling handles shrinking */
   width: 210mm;
+  min-width: 210mm;
   height: 297mm;
   min-height: 297mm;
-  margin: 0 auto;
+  margin: 0;
+  flex-shrink: 0;
 
   background: #fff;
   color: #000;
-  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
 
   /* Same grid as latex.js base.css `body, .page` */
   display: grid;
@@ -690,7 +749,7 @@ body {
   grid-template-rows: auto;
 
   position: relative;
-  transform-origin: top center;
+  transform-origin: top left;
 
 }
 

@@ -102,6 +102,22 @@ function initModules() {
   });
 
   setupResizers();
+  setupSidebarToggle();
+}
+
+function setupSidebarToggle() {
+  const toggle = document.getElementById('sidebar-toggle');
+  const panels = document.querySelector('.panels');
+  if (!toggle || !panels) return;
+  toggle.addEventListener('click', () => {
+    panels.classList.toggle('is-sidebar-collapsed');
+  });
+}
+
+function applySidebarState(expanded) {
+  const panels = document.querySelector('.panels');
+  if (!panels) return;
+  panels.classList.toggle('is-sidebar-collapsed', !expanded);
 }
 
 function scheduleRender({ immediate = false } = {}) {
@@ -369,6 +385,7 @@ async function loadConfig() {
     const config = await res.json();
     state.files = { ...(config.starterFiles ?? {}) };
     state.readOnlyFiles = new Set(config.readOnlyFiles ?? []);
+    applySidebarState(config.sidebarExpanded === true);
     const firstFile = config.activeFile && state.files[config.activeFile]
       ? config.activeFile
       : Object.keys(state.files)[0] ?? '';
