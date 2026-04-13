@@ -402,7 +402,7 @@ function handleAddImage(file) {
   const url = URL.createObjectURL(file);
   state.images = {
     ...state.images,
-    [name]: { url, mime: file.type, size: file.size },
+    [name]: { url, mime: file.type, size: file.size, source: 'local' },
   };
   fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles], state.images);
   if (state.autoRender) scheduleRender({ immediate: true });
@@ -412,7 +412,12 @@ function handleAddImage(file) {
 function handleRemoveImage(name) {
   const entry = state.images[name];
   if (!entry) return;
-  URL.revokeObjectURL(entry.url);
+  if (entry.source === 'server') {
+    fetch(`/images/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      .catch((err) => console.warn('Failed to delete server image', err));
+  } else {
+    URL.revokeObjectURL(entry.url);
+  }
   const next = { ...state.images };
   delete next[name];
   state.images = next;
@@ -442,6 +447,23 @@ function renderEmptyPreviewIfNoFiles() {
   }
 }
 
+async function loadServerImages() {
+  try {
+    const res = await fetch('/images');
+    if (!res.ok) return;
+    const meta = await res.json();
+    const next = { ...state.images };
+    Object.entries(meta).forEach(([name, info]) => {
+      // Bust the browser cache so updates via the API are reflected.
+      const url = `${info.url}?t=${Date.now()}`;
+      next[name] = { url, mime: info.mime, size: info.size, source: 'server' };
+    });
+    state.images = next;
+  } catch (err) {
+    console.warn('Failed to load server images', err);
+  }
+}
+
 async function loadConfig() {
   setStatus('Loading...', 'busy');
   try {
@@ -455,6 +477,7 @@ async function loadConfig() {
       ? config.activeFile
       : Object.keys(state.files)[0] ?? '';
     state.activeFile = firstFile;
+    await loadServerImages();
     fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles], state.images);
     if (state.activeFile) {
       editorApi?.setDoc(state.files[state.activeFile]);
