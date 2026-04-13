@@ -164,15 +164,45 @@ function buildPreviewTable(tableInfo) {
   return host;
 }
 
-function replaceTabularPlaceholders(root, tables = []) {
-  if (!tables.length) return;
-  tables.forEach((tableInfo) => {
+function buildGraphicElement(info) {
+  if (!info.url) {
+    const missing = document.createElement('div');
+    missing.className = 'preview-graphic-missing';
+    const label = document.createElement('span');
+    label.className = 'preview-graphic-missing-label';
+    label.textContent = info.requestedName || '(unnamed image)';
+    missing.appendChild(label);
+    if (info.width) missing.style.width = info.width;
+    if (info.height) missing.style.height = info.height;
+    return missing;
+  }
+  const img = document.createElement('img');
+  img.className = 'preview-graphic';
+  img.src = info.url;
+  img.alt = info.resolvedName || info.requestedName || '';
+  if (info.width) img.style.width = info.width;
+  if (info.height) img.style.height = info.height;
+  // graphicx options that aren't simple length values use a transform.
+  const transforms = [];
+  if (info.scale && Number.isFinite(info.scale) && info.scale !== 1) {
+    transforms.push(`scale(${info.scale})`);
+  }
+  if (info.angle && Number.isFinite(info.angle)) {
+    transforms.push(`rotate(${info.angle}deg)`);
+  }
+  if (transforms.length) img.style.transform = transforms.join(' ');
+  return img;
+}
+
+function replacePlaceholders(root, items, builder) {
+  if (!items?.length) return;
+  items.forEach((info) => {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
     let targetNode = null;
     let indexInNode = -1;
     while (walker.nextNode()) {
       const node = walker.currentNode;
-      const idx = node.nodeValue.indexOf(tableInfo.placeholder);
+      const idx = node.nodeValue.indexOf(info.placeholder);
       if (idx !== -1) {
         targetNode = node;
         indexInNode = idx;
@@ -180,21 +210,25 @@ function replaceTabularPlaceholders(root, tables = []) {
       }
     }
     if (!targetNode || indexInNode === -1) {
-      console.warn('Preview table placeholder missing:', tableInfo.placeholder);
+      console.warn('Preview placeholder missing:', info.placeholder);
       return;
     }
     const beforeText = targetNode.nodeValue.slice(0, indexInNode);
-    const afterText = targetNode.nodeValue.slice(indexInNode + tableInfo.placeholder.length);
+    const afterText = targetNode.nodeValue.slice(indexInNode + info.placeholder.length);
     const fragment = document.createDocumentFragment();
-    if (beforeText) {
-      fragment.appendChild(document.createTextNode(beforeText));
-    }
-    fragment.appendChild(buildPreviewTable(tableInfo));
-    if (afterText) {
-      fragment.appendChild(document.createTextNode(afterText));
-    }
+    if (beforeText) fragment.appendChild(document.createTextNode(beforeText));
+    fragment.appendChild(builder(info));
+    if (afterText) fragment.appendChild(document.createTextNode(afterText));
     targetNode.parentNode.replaceChild(fragment, targetNode);
   });
+}
+
+function replaceGraphicPlaceholders(root, graphics = []) {
+  replacePlaceholders(root, graphics, buildGraphicElement);
+}
+
+function replaceTabularPlaceholders(root, tables = []) {
+  replacePlaceholders(root, tables, buildPreviewTable);
 }
 
 /**
@@ -352,6 +386,7 @@ export function createPreview(container) {
 
   function render(content, options = {}) {
     const tables = options.tables ?? [];
+    const graphics = options.graphics ?? [];
     activeGeometry = options.geometry ?? null;
     pageEntries = [];
     container.innerHTML = '';
@@ -377,6 +412,7 @@ export function createPreview(container) {
       generator.applyLengthsAndGeometryToDom(page);
       applyGeometryToPage(page);
       replaceTabularPlaceholders(page, tables);
+      replaceGraphicPlaceholders(page, graphics);
 
       // Split into multiple pages if content overflows
       paginate(container, page, {

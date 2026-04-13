@@ -6,6 +6,7 @@ import { initFileTree } from './filetree.js';
 import { createEditorToolbar } from './editorToolbar.js';
 import { createOutline } from './outline.js';
 import { preprocessLatex } from './preprocess.js';
+import { createImageUploadModal } from './imageUpload.js';
 
 const state = {
   files: {},
@@ -16,6 +17,8 @@ const state = {
   pageCount: 0,
   currentPage: 0,
   previewZoom: 100,
+  // Ephemeral: blob-URL-backed images uploaded this session. Cleared on refresh.
+  images: {},
 };
 
 const refs = {
@@ -32,6 +35,7 @@ let previewControlsApi;
 let fileTreeApi;
 let editorToolbarApi;
 let outlineApi;
+let imageUploadApi;
 let renderTimer = null;
 let snapshotTimer = null;
 let outlineTimer = null;
@@ -87,6 +91,15 @@ function initModules() {
     onCreateFile: handleCreateFile,
     onRenameFile: handleRenameFile,
     onDeleteFile: handleDeleteFile,
+    onUploadImage: () => imageUploadApi?.open(),
+    onSelectImage: insertIncludeGraphics,
+    onDeleteImage: handleRemoveImage,
+  });
+
+  imageUploadApi = createImageUploadModal({
+    getImages: () => state.images,
+    onAdd: handleAddImage,
+    onRemove: handleRemoveImage,
   });
 
   outlineApi = createOutline(refs.outline);
@@ -246,11 +259,17 @@ function renderActiveFile() {
   try {
     const previousPage = state.currentPage || 1;
     const rawContent = state.files[state.activeFile] ?? '';
-    const { content: processedContent, warnings, tables, geometry } = preprocessLatex(rawContent);
+    const {
+      content: processedContent,
+      warnings,
+      tables,
+      geometry,
+      graphics,
+    } = preprocessLatex(rawContent, { images: state.images });
     if (warnings.length) {
       warnings.forEach((message) => console.warn('[preview]', message));
     }
-    const result = previewApi.render(processedContent ?? '', { tables, geometry });
+    const result = previewApi.render(processedContent ?? '', { tables, geometry, graphics });
     updateRenderStatus(result);
     applyPaginationResult(result.pageCount ?? 0, previousPage);
     if (result.ok) {
@@ -295,7 +314,7 @@ function setActiveFile(filename) {
   editorApi?.setDoc(state.files[filename]);
   const isReadOnly = state.readOnlyFiles.has(filename);
   editorApi?.setReadOnly(isReadOnly);
-  fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles]);
+  fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles], state.images);
   outlineApi?.update(state.files[filename]);
 }
 
@@ -309,7 +328,7 @@ function handleCreateFile(filename) {
   }
   state.files = { ...state.files, [trimmed]: '' };
   setActiveFile(trimmed);
-  fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles]);
+  fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles], state.images);
   scheduleSnapshot();
   if (state.autoRender) {
     scheduleRender({ immediate: true });
@@ -337,7 +356,7 @@ function handleRenameFile(oldName, newName) {
   if (state.activeFile === oldName) {
     state.activeFile = trimmed;
   }
-  fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles]);
+  fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles], state.images);
   scheduleSnapshot();
 }
 
@@ -360,13 +379,59 @@ function handleDeleteFile(filename) {
       editorApi?.setDoc('');
     }
   }
-  fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles]);
+  fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles], state.images);
   scheduleSnapshot();
   if (state.autoRender) {
     scheduleRender({ immediate: true });
   } else {
     renderEmptyPreviewIfNoFiles();
   }
+}
+
+function handleAddImage(file) {
+  // Use the original filename; if it collides, suffix `-1`, `-2`, etc.
+  let name = file.name;
+  if (state.images[name]) {
+    const dot = name.lastIndexOf('.');
+    const base = dot === -1 ? name : name.slice(0, dot);
+    const ext = dot === -1 ? '' : name.slice(dot);
+    let n = 1;
+    while (state.images[`${base}-${n}${ext}`]) n += 1;
+    name = `${base}-${n}${ext}`;
+  }
+  const url = URL.createObjectURL(file);
+  state.images = {
+    ...state.images,
+    [name]: { url, mime: file.type, size: file.size },
+  };
+  fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles], state.images);
+  if (state.autoRender) scheduleRender({ immediate: true });
+  return { ok: true, name };
+}
+
+function handleRemoveImage(name) {
+  const entry = state.images[name];
+  if (!entry) return;
+  URL.revokeObjectURL(entry.url);
+  const next = { ...state.images };
+  delete next[name];
+  state.images = next;
+  fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles], state.images);
+  imageUploadApi?.refresh();
+  if (state.autoRender) scheduleRender({ immediate: true });
+}
+
+function insertIncludeGraphics(name) {
+  if (!editorApi || !state.activeFile) return;
+  if (state.readOnlyFiles.has(state.activeFile)) return;
+  const { view } = editorApi;
+  view.focus();
+  const snippet = `\\includegraphics{${name}}`;
+  const range = view.state.selection.main;
+  view.dispatch({
+    changes: { from: range.from, to: range.to, insert: snippet },
+    selection: { anchor: range.from + snippet.length },
+  });
 }
 
 function renderEmptyPreviewIfNoFiles() {
@@ -390,7 +455,7 @@ async function loadConfig() {
       ? config.activeFile
       : Object.keys(state.files)[0] ?? '';
     state.activeFile = firstFile;
-    fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles]);
+    fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles], state.images);
     if (state.activeFile) {
       editorApi?.setDoc(state.files[state.activeFile]);
       const isReadOnly = state.readOnlyFiles.has(state.activeFile);

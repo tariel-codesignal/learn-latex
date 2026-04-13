@@ -1,5 +1,13 @@
 const ALIGN_ENV_PATTERN = /\\begin\{(align\*?)\}([\s\S]*?)\\end\{\1\}/g;
 const BOOKTABS_PACKAGE_PATTERN = /\\usepackage(?:\[[^\]]*])?\{booktabs\}/gi;
+const GRAPHICX_PACKAGE_PATTERN = /\\usepackage(?:\[[^\]]*])?\{graphicx\}/gi;
+const INCLUDEGRAPHICS_PATTERN = /\\includegraphics\s*(?:\[([^\]]*)\])?\s*\{([^}]*)\}/g;
+const FIGURE_BEGIN_PATTERN = /\\begin\{figure\*?\}/g;
+const GRAPHIC_PLACEHOLDER_PREFIX = 'PREVIEWGRAPHICBLOCK';
+const IMAGE_EXTENSIONS = ['', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.PNG', '.JPG', '.JPEG'];
+const DEFAULT_TEXT_WIDTH_MM = 210 - 25.4 - 25.4;   // A4 with 1in margins
+const DEFAULT_TEXT_HEIGHT_MM = 297 - 25.4 - 25.4;
+
 const GEOMETRY_PACKAGE_PATTERN = /\\usepackage\s*(?:\[([^\]]*)\])?\s*\{geometry\}/gi;
 const GEOMETRY_COMMAND_PATTERN = /\\geometry\s*\{([^}]*)\}/gi;
 
@@ -494,13 +502,171 @@ function extractGeometry(source, warnings) {
   return { content: cleaned, geometry };
 }
 
-export function preprocessLatex(source) {
+function rewriteFigureEnvironments(source, warnings) {
+  if (!source || !source.includes('\\begin{figure')) return source;
+  let result = '';
+  let lastIndex = 0;
+  let figureNumber = 0;
+  let warned = false;
+  FIGURE_BEGIN_PATTERN.lastIndex = 0;
+  let match;
+  while ((match = FIGURE_BEGIN_PATTERN.exec(source))) {
+    const beginIndex = match.index;
+    const envName = match[0].includes('*') ? 'figure*' : 'figure';
+    let cursor = FIGURE_BEGIN_PATTERN.lastIndex;
+    cursor = skipWhitespace(source, cursor);
+    if (source[cursor] === '[') {
+      const opt = extractDelimitedContent(source, cursor, '[', ']');
+      if (opt) cursor = opt.endIndex;
+    }
+    const envEnd = findEnvironmentEnd(source, cursor, envName);
+    if (!envEnd) continue;
+    const body = source.slice(cursor, envEnd.start);
+    figureNumber += 1;
+
+    // Pull out caption text (brace-balanced) and remove \label / \centering.
+    let captionText = '';
+    let cleaned = body;
+    cleaned = cleaned.replace(/\\centering\s*/g, '');
+    const captionRe = /\\caption\s*\{/g;
+    let capMatch;
+    while ((capMatch = captionRe.exec(cleaned))) {
+      const openIdx = capMatch.index + capMatch[0].length - 1;
+      const block = extractDelimitedContent(cleaned, openIdx, '{', '}');
+      if (!block) break;
+      captionText = block.content.trim();
+      cleaned = cleaned.slice(0, capMatch.index) + cleaned.slice(block.endIndex);
+      captionRe.lastIndex = capMatch.index;
+    }
+    cleaned = cleaned.replace(/\\label\s*\{[^}]*\}/g, '').trim();
+
+    const captionPart = captionText
+      ? `\n\n\\textbf{Figure ${figureNumber}:} ${captionText}\n`
+      : '';
+    const replacement = `\n\\begin{center}\n${cleaned}${captionPart}\n\\end{center}\n`;
+
+    result += source.slice(lastIndex, beginIndex);
+    result += replacement;
+    lastIndex = envEnd.end;
+    FIGURE_BEGIN_PATTERN.lastIndex = envEnd.end;
+    if (!warned) {
+      warnings.push('Rendered \\begin{figure} as a centered block with caption; floats are not actually positioned.');
+      warned = true;
+    }
+  }
+  result += source.slice(lastIndex);
+  return result;
+}
+
+function resolveGraphicLength(value, textWidthMm, textHeightMm) {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  // Match "0.5\linewidth", "\textwidth", "0.7 \columnwidth" — case-insensitive.
+  const widthRe = /^(?:([\d.]+)\s*)?\\(linewidth|textwidth|columnwidth|hsize)\b/i;
+  const wMatch = widthRe.exec(trimmed);
+  if (wMatch) {
+    const factor = wMatch[1] ? parseFloat(wMatch[1]) : 1.0;
+    return `${(factor * textWidthMm).toFixed(2)}mm`;
+  }
+  const heightRe = /^(?:([\d.]+)\s*)?\\(textheight|vsize)\b/i;
+  const hMatch = heightRe.exec(trimmed);
+  if (hMatch) {
+    const factor = hMatch[1] ? parseFloat(hMatch[1]) : 1.0;
+    return `${(factor * textHeightMm).toFixed(2)}mm`;
+  }
+  return trimmed;
+}
+
+function stripGraphicxPackage(source, warnings) {
+  if (!source || !GRAPHICX_PACKAGE_PATTERN.test(source)) {
+    GRAPHICX_PACKAGE_PATTERN.lastIndex = 0;
+    return source;
+  }
+  GRAPHICX_PACKAGE_PATTERN.lastIndex = 0;
+  warnings.push('Removed \\usepackage{graphicx}; preview substitutes uploaded images for \\includegraphics.');
+  return source.replace(GRAPHICX_PACKAGE_PATTERN, '');
+}
+
+function resolveImageName(name, images) {
+  if (!images) return null;
+  const trimmed = (name || '').trim();
+  if (!trimmed) return null;
+  for (const ext of IMAGE_EXTENSIONS) {
+    const candidate = trimmed + ext;
+    if (images[candidate]) return candidate;
+  }
+  // Case-insensitive fallback.
+  const lower = trimmed.toLowerCase();
+  for (const key of Object.keys(images)) {
+    const k = key.toLowerCase();
+    if (k === lower) return key;
+    for (const ext of IMAGE_EXTENSIONS) {
+      if (k === lower + ext.toLowerCase()) return key;
+    }
+  }
+  return null;
+}
+
+function rewriteIncludeGraphics(source, images, warnings, geometry) {
+  if (!source) return { content: source, graphics: [] };
+  if (!INCLUDEGRAPHICS_PATTERN.test(source)) {
+    INCLUDEGRAPHICS_PATTERN.lastIndex = 0;
+    return { content: source, graphics: [] };
+  }
+  INCLUDEGRAPHICS_PATTERN.lastIndex = 0;
+  const textWidthMm = geometry?.textWidth ?? DEFAULT_TEXT_WIDTH_MM;
+  const textHeightMm = geometry?.textHeight ?? DEFAULT_TEXT_HEIGHT_MM;
+  const graphics = [];
+  let warnedMissing = false;
+  let warnedNoUploads = false;
+  const result = source.replace(INCLUDEGRAPHICS_PATTERN, (_match, optStr, rawName) => {
+    const placeholder = `${GRAPHIC_PLACEHOLDER_PREFIX}${graphics.length}`;
+    const opts = optStr ? parseGeometryOptionString(optStr) : {};
+    const resolved = resolveImageName(rawName, images);
+    const entry = {
+      placeholder,
+      requestedName: (rawName || '').trim(),
+      resolvedName: resolved,
+      url: resolved ? images[resolved].url : null,
+      width: resolveGraphicLength(opts.width, textWidthMm, textHeightMm),
+      height: resolveGraphicLength(opts.height, textWidthMm, textHeightMm),
+      scale: opts.scale ? parseFloat(opts.scale) : null,
+      angle: opts.angle ? parseFloat(opts.angle) : null,
+      keepAspectRatio: opts.keepaspectratio === true,
+    };
+    graphics.push(entry);
+    if (!resolved) {
+      if (!images || !Object.keys(images).length) {
+        if (!warnedNoUploads) {
+          warnings.push('No images uploaded — \\includegraphics references will render as missing-image placeholders.');
+          warnedNoUploads = true;
+        }
+      } else if (!warnedMissing) {
+        warnings.push(`\\includegraphics{${entry.requestedName}} did not match any uploaded image.`);
+        warnedMissing = true;
+      }
+    }
+    return `\n${placeholder}\n`;
+  });
+  return { content: result, graphics };
+}
+
+export function preprocessLatex(source, options = {}) {
   const warnings = [];
   let content = source ?? '';
   const geometryResult = extractGeometry(content, warnings);
   content = geometryResult.content;
   content = stripBooktabsPackage(content, warnings);
   content = rewriteBooktabsCommands(content, warnings);
+  content = stripGraphicxPackage(content, warnings);
+  content = rewriteFigureEnvironments(content, warnings);
+  const graphicsResult = rewriteIncludeGraphics(
+    content,
+    options.images,
+    warnings,
+    geometryResult.geometry,
+  );
+  content = graphicsResult.content;
   const tabularResult = rewriteTabularEnvironments(content, warnings);
   content = tabularResult.content;
   content = rewriteAlignEnvironments(content, warnings);
@@ -509,5 +675,6 @@ export function preprocessLatex(source) {
     warnings,
     tables: tabularResult.tables,
     geometry: geometryResult.geometry,
+    graphics: graphicsResult.graphics,
   };
 }
