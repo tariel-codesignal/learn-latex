@@ -1,5 +1,30 @@
 const ALIGN_ENV_PATTERN = /\\begin\{(align\*?)\}([\s\S]*?)\\end\{\1\}/g;
 const BOOKTABS_PACKAGE_PATTERN = /\\usepackage(?:\[[^\]]*])?\{booktabs\}/gi;
+const GEOMETRY_PACKAGE_PATTERN = /\\usepackage\s*(?:\[([^\]]*)\])?\s*\{geometry\}/gi;
+const GEOMETRY_COMMAND_PATTERN = /\\geometry\s*\{([^}]*)\}/gi;
+
+const UNIT_TO_MM = {
+  pt: 25.4 / 72,
+  bp: 25.4 / 72,
+  pc: 25.4 / 6,
+  mm: 1,
+  cm: 10,
+  in: 25.4,
+};
+
+const PAPER_SIZES_MM = {
+  a3paper: { width: 297, height: 420 },
+  a4paper: { width: 210, height: 297 },
+  a5paper: { width: 148, height: 210 },
+  b4paper: { width: 250, height: 353 },
+  b5paper: { width: 176, height: 250 },
+  letterpaper: { width: 215.9, height: 279.4 },
+  legalpaper: { width: 215.9, height: 355.6 },
+  executivepaper: { width: 184.15, height: 266.7 },
+};
+
+const DEFAULT_MARGIN_MM = 25.4; // 1in, matches LaTeX defaults
+
 const BOOKTABS_COMMANDS = [
   { pattern: /\\toprule/g, replacement: '\\hline', message: 'Replaced \\toprule with \\hline; line weight differences are not simulated.' },
   { pattern: /\\midrule/g, replacement: '\\hline', message: 'Replaced \\midrule with \\hline.' },
@@ -274,13 +299,169 @@ function rewriteBooktabsCommands(source, warnings) {
   return result;
 }
 
+function parseLengthMm(str) {
+  if (!str) return null;
+  const match = /^([+-]?\d*\.?\d+)\s*([a-z]+)$/i.exec(String(str).trim());
+  if (!match) return null;
+  const value = parseFloat(match[1]);
+  const unit = match[2].toLowerCase();
+  if (!Number.isFinite(value) || !(unit in UNIT_TO_MM)) return null;
+  return value * UNIT_TO_MM[unit];
+}
+
+function parseGeometryOptionString(optStr) {
+  const opts = {};
+  if (!optStr) return opts;
+  // Split on commas that aren't inside braces (geometry options don't really
+  // nest braces, but be defensive).
+  let depth = 0;
+  let start = 0;
+  const parts = [];
+  for (let i = 0; i < optStr.length; i += 1) {
+    const ch = optStr[i];
+    if (ch === '{') depth += 1;
+    else if (ch === '}') depth -= 1;
+    else if (ch === ',' && depth === 0) {
+      parts.push(optStr.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(optStr.slice(start));
+  parts
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .forEach((part) => {
+      const eq = part.indexOf('=');
+      if (eq === -1) {
+        opts[part.toLowerCase()] = true;
+      } else {
+        const key = part.slice(0, eq).trim().toLowerCase();
+        const value = part.slice(eq + 1).trim();
+        opts[key] = value;
+      }
+    });
+  return opts;
+}
+
+function resolveGeometry(rawOpts, warnings) {
+  let paperWidth = PAPER_SIZES_MM.a4paper.width;
+  let paperHeight = PAPER_SIZES_MM.a4paper.height;
+
+  Object.keys(rawOpts).forEach((key) => {
+    if (rawOpts[key] === true && PAPER_SIZES_MM[key]) {
+      paperWidth = PAPER_SIZES_MM[key].width;
+      paperHeight = PAPER_SIZES_MM[key].height;
+    }
+  });
+  if (rawOpts.landscape === true) {
+    [paperWidth, paperHeight] = [paperHeight, paperWidth];
+  }
+  const pw = parseLengthMm(rawOpts.paperwidth);
+  if (pw) paperWidth = pw;
+  const ph = parseLengthMm(rawOpts.paperheight);
+  if (ph) paperHeight = ph;
+
+  let left = DEFAULT_MARGIN_MM;
+  let right = DEFAULT_MARGIN_MM;
+  let top = DEFAULT_MARGIN_MM;
+  let bottom = DEFAULT_MARGIN_MM;
+
+  const tryAssign = (key, target) => {
+    const v = parseLengthMm(rawOpts[key]);
+    return v == null ? target : v;
+  };
+
+  const m = parseLengthMm(rawOpts.margin);
+  if (m != null) { left = right = top = bottom = m; }
+  const hm = parseLengthMm(rawOpts.hmargin);
+  if (hm != null) { left = right = hm; }
+  const vm = parseLengthMm(rawOpts.vmargin);
+  if (vm != null) { top = bottom = vm; }
+  left = tryAssign('left', left);
+  left = tryAssign('lmargin', left);
+  right = tryAssign('right', right);
+  right = tryAssign('rmargin', right);
+  top = tryAssign('top', top);
+  top = tryAssign('tmargin', top);
+  bottom = tryAssign('bottom', bottom);
+  bottom = tryAssign('bmargin', bottom);
+
+  let textWidth = paperWidth - left - right;
+  let textHeight = paperHeight - top - bottom;
+  const tw = parseLengthMm(rawOpts.textwidth);
+  if (tw) textWidth = tw;
+  const th = parseLengthMm(rawOpts.textheight);
+  if (th) textHeight = th;
+
+  if (textWidth <= 5 || textHeight <= 5) {
+    warnings.push(
+      `Ignoring \\usepackage{geometry} options — resulting text area `
+      + `(${textWidth.toFixed(1)}mm × ${textHeight.toFixed(1)}mm) is invalid for the page.`,
+    );
+    return null;
+  }
+
+  // Re-derive margins so the three column widths sum exactly to paperWidth
+  // (latex.js's grid uses these three values as the grid template columns).
+  const finalLeft = Math.max(left, 0);
+  const finalRight = Math.max(paperWidth - finalLeft - textWidth, 0);
+
+  return {
+    paperWidth,
+    paperHeight,
+    left: finalLeft,
+    right: finalRight,
+    top: Math.max(top, 0),
+    bottom: Math.max(bottom, 0),
+    textWidth,
+    textHeight,
+  };
+}
+
+function extractGeometry(source, warnings) {
+  if (!source) return { content: source, geometry: null };
+  let touched = false;
+  const rawOpts = {};
+  let cleaned = source;
+
+  cleaned = cleaned.replace(GEOMETRY_PACKAGE_PATTERN, (_match, optStr) => {
+    touched = true;
+    if (optStr) Object.assign(rawOpts, parseGeometryOptionString(optStr));
+    return '';
+  });
+
+  cleaned = cleaned.replace(GEOMETRY_COMMAND_PATTERN, (_match, optStr) => {
+    touched = true;
+    Object.assign(rawOpts, parseGeometryOptionString(optStr));
+    return '';
+  });
+
+  if (!touched) return { content: source, geometry: null };
+
+  const geometry = resolveGeometry(rawOpts, warnings);
+  if (geometry) {
+    warnings.push(
+      `Applied geometry options (page ${geometry.paperWidth.toFixed(1)}×${geometry.paperHeight.toFixed(1)}mm, `
+      + `text ${geometry.textWidth.toFixed(1)}×${geometry.textHeight.toFixed(1)}mm).`,
+    );
+  }
+  return { content: cleaned, geometry };
+}
+
 export function preprocessLatex(source) {
   const warnings = [];
   let content = source ?? '';
+  const geometryResult = extractGeometry(content, warnings);
+  content = geometryResult.content;
   content = stripBooktabsPackage(content, warnings);
   content = rewriteBooktabsCommands(content, warnings);
   const tabularResult = rewriteTabularEnvironments(content, warnings);
   content = tabularResult.content;
   content = rewriteAlignEnvironments(content, warnings);
-  return { content, warnings, tables: tabularResult.tables };
+  return {
+    content,
+    warnings,
+    tables: tabularResult.tables,
+    geometry: geometryResult.geometry,
+  };
 }

@@ -246,11 +246,11 @@ function renderActiveFile() {
   try {
     const previousPage = state.currentPage || 1;
     const rawContent = state.files[state.activeFile] ?? '';
-    const { content: processedContent, warnings, tables } = preprocessLatex(rawContent);
+    const { content: processedContent, warnings, tables, geometry } = preprocessLatex(rawContent);
     if (warnings.length) {
       warnings.forEach((message) => console.warn('[preview]', message));
     }
-    const result = previewApi.render(processedContent ?? '', { tables });
+    const result = previewApi.render(processedContent ?? '', { tables, geometry });
     updateRenderStatus(result);
     applyPaginationResult(result.pageCount ?? 0, previousPage);
     if (result.ok) {

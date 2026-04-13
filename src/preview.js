@@ -178,11 +178,12 @@ function replaceTabularPlaceholders(root, tables = []) {
  * After latex.js renders into a single page, split the .body children across
  * multiple pages if the content overflows.
  */
-function paginate(container, firstPage) {
+function paginate(container, firstPage, options = {}) {
   const body = firstPage.querySelector('.body');
   if (!body) return;
 
-  const maxHeight = ptToPx(PAGE_CONTENT_HEIGHT_PT);
+  const maxHeight = options.maxHeightPx ?? ptToPx(PAGE_CONTENT_HEIGHT_PT);
+  const onPageCreated = options.onPageCreated;
 
   // Collect all children into an array (we'll redistribute them)
   const children = Array.from(body.children);
@@ -225,7 +226,6 @@ function paginate(container, firstPage) {
   for (let i = 1; i < pages.length; i += 1) {
     const newPage = document.createElement('div');
     newPage.className = 'preview-page page';
-    newPage.style.setProperty('--paperwidth', PAPER_WIDTH_CSS);
     // Copy grid CSS variables
     Object.entries(varValues).forEach(([k, v]) => { if (v) newPage.style.setProperty(k, v); });
 
@@ -234,6 +234,7 @@ function paginate(container, firstPage) {
     pages[i].forEach((child) => newBody.appendChild(child));
     newPage.appendChild(newBody);
     container.appendChild(newPage);
+    if (typeof onPageCreated === 'function') onPageCreated(newPage);
   }
 }
 
@@ -242,10 +243,60 @@ export function createPreview(container) {
   let pageEntries = [];
   let manualZoom = 1;
   let autoScale = 1;
-  function lockPageWidth(page) {
-    if (!page) return;
-    page.style.setProperty('--paperwidth', PAPER_WIDTH_CSS);
+  let activeGeometry = null; // null = use latex.js / CSS defaults
+
+  function mmToPx(mm) {
+    return (mm / 25.4) * 96;
   }
+
+  function getPageDimensionsPx() {
+    if (activeGeometry) {
+      return {
+        widthPx: mmToPx(activeGeometry.paperWidth),
+        heightPx: mmToPx(activeGeometry.paperHeight),
+      };
+    }
+    return {
+      widthPx: PAGE_NATURAL_WIDTH_PX,
+      heightPx: PAGE_NATURAL_WIDTH_PX * PAGE_ASPECT_RATIO,
+    };
+  }
+
+  function getContentHeightPx() {
+    if (activeGeometry) {
+      return mmToPx(activeGeometry.textHeight);
+    }
+    return ptToPx(PAGE_CONTENT_HEIGHT_PT);
+  }
+
+  function applyGeometryToPage(page) {
+    if (!page) return;
+    if (!activeGeometry) {
+      page.style.setProperty('--paperwidth', PAPER_WIDTH_CSS);
+      return;
+    }
+    const g = activeGeometry;
+    page.style.setProperty('--paperwidth', `${g.paperWidth}mm`);
+    page.style.setProperty('--marginleftwidth', `${g.left}mm`);
+    page.style.setProperty('--textwidth', `${g.textWidth}mm`);
+    page.style.setProperty('--marginrightwidth', `${g.right}mm`);
+    page.style.width = `${g.paperWidth}mm`;
+    page.style.minWidth = `${g.paperWidth}mm`;
+    page.style.height = `${g.paperHeight}mm`;
+    page.style.minHeight = `${g.paperHeight}mm`;
+
+    const body = page.querySelector('.body');
+    if (body) {
+      // Body uses border-box; height includes padding-top. Setting it to
+      // top + textHeight makes the actual content area equal textHeight,
+      // and leaves `bottom` mm beneath the body for the page-number footer.
+      const bodyExtent = `${g.top + g.textHeight}mm`;
+      body.style.paddingTop = `${g.top}mm`;
+      body.style.height = bodyExtent;
+      body.style.minHeight = bodyExtent;
+    }
+  }
+
   const resizeObserver = new ResizeObserver(() => {
     updateAutoScale();
   });
@@ -262,23 +313,23 @@ export function createPreview(container) {
   }
 
   function buildPageEntries() {
+    const { widthPx, heightPx } = getPageDimensionsPx();
     const rawPages = Array.from(container.querySelectorAll('.preview-page'));
     pageEntries = rawPages.map((page) => {
       page.style.transform = '';
       page.style.transformOrigin = 'top left';
-      const baseWidth = PAGE_NATURAL_WIDTH_PX;
-      const baseHeight = baseWidth * PAGE_ASPECT_RATIO;
       const wrapper = document.createElement('div');
       wrapper.className = 'preview-page-wrapper';
       page.parentNode.insertBefore(wrapper, page);
       wrapper.appendChild(page);
-      return { page, wrapper, baseHeight, baseWidth };
+      return { page, wrapper, baseHeight: heightPx, baseWidth: widthPx };
     });
     updateAutoScale(true);
   }
 
   function render(content, options = {}) {
     const tables = options.tables ?? [];
+    activeGeometry = options.geometry ?? null;
     pageEntries = [];
     container.innerHTML = '';
 
@@ -301,11 +352,14 @@ export function createPreview(container) {
       parse(processed, { generator });
       page.appendChild(generator.domFragment());
       generator.applyLengthsAndGeometryToDom(page);
-      lockPageWidth(page);
+      applyGeometryToPage(page);
       replaceTabularPlaceholders(page, tables);
 
       // Split into multiple pages if content overflows
-      paginate(container, page);
+      paginate(container, page, {
+        maxHeightPx: getContentHeightPx(),
+        onPageCreated: applyGeometryToPage,
+      });
 
       buildPageEntries();
       applyZoom();
