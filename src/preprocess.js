@@ -86,23 +86,32 @@ function findEnvironmentEnd(source, startIndex, envName) {
 
 function parseColumnAlignments(spec = '') {
   const alignments = [];
+  const leftRules = []; // leftRules[i] = true when one or more `|` precede column i
+  let pendingRule = false;
   let i = 0;
+  const pushColumn = (align) => {
+    alignments.push(align);
+    leftRules.push(pendingRule);
+    pendingRule = false;
+  };
   while (i < spec.length) {
     const ch = spec[i];
     if (ch === 'l' || ch === 'L') {
-      alignments.push('left');
+      pushColumn('left');
     } else if (ch === 'c' || ch === 'C') {
-      alignments.push('center');
+      pushColumn('center');
     } else if (ch === 'r' || ch === 'R') {
-      alignments.push('right');
+      pushColumn('right');
     } else if (ch === 'p' || ch === 'm' || ch === 'b') {
-      alignments.push('left');
+      pushColumn('left');
       if (spec[i + 1] === '{') {
         const block = extractDelimitedContent(spec, i + 1, '{', '}');
         if (block) {
           i = block.endIndex - 1;
         }
       }
+    } else if (ch === '|') {
+      pendingRule = true;
     } else if (ch === '@' || ch === '!' || ch === '<' || ch === '>') {
       if (spec[i + 1] === '{') {
         const block = extractDelimitedContent(spec, i + 1, '{', '}');
@@ -113,7 +122,36 @@ function parseColumnAlignments(spec = '') {
     }
     i += 1;
   }
-  return alignments;
+  // Anything left over in pendingRule becomes the trailing right-edge rule.
+  return { alignments, leftRules, rightRule: pendingRule };
+}
+
+function parseMulticolumn(text) {
+  const trimmed = (text || '').trim();
+  if (!trimmed.startsWith('\\multicolumn')) return null;
+  let i = '\\multicolumn'.length;
+  while (i < trimmed.length && /\s/.test(trimmed[i])) i += 1;
+  const numArg = extractDelimitedContent(trimmed, i, '{', '}');
+  if (!numArg) return null;
+  i = numArg.endIndex;
+  while (i < trimmed.length && /\s/.test(trimmed[i])) i += 1;
+  const specArg = extractDelimitedContent(trimmed, i, '{', '}');
+  if (!specArg) return null;
+  i = specArg.endIndex;
+  while (i < trimmed.length && /\s/.test(trimmed[i])) i += 1;
+  const contentArg = extractDelimitedContent(trimmed, i, '{', '}');
+  if (!contentArg) return null;
+  const span = parseInt(numArg.content.trim(), 10);
+  if (!Number.isFinite(span) || span < 1) return null;
+  const colInfo = parseColumnAlignments(specArg.content);
+  return {
+    type: 'multicolumn',
+    content: contentArg.content,
+    span,
+    align: colInfo.alignments[0] || 'left',
+    leftRule: colInfo.leftRules[0] || false,
+    rightRule: colInfo.rightRule || false,
+  };
 }
 
 function parseTabularBody(body, warnings) {
@@ -128,14 +166,19 @@ function parseTabularBody(body, warnings) {
   let notedClines = false;
 
   const pushCell = () => {
-    currentRow.push(currentCell.trim());
+    const trimmed = currentCell.trim();
+    const mc = parseMulticolumn(trimmed);
+    currentRow.push(mc ?? trimmed);
     currentCell = '';
   };
 
+  const cellHasContent = (cell) => (
+    typeof cell === 'string' ? cell.length > 0 : Boolean(cell?.content)
+  );
+
   const finalizeRow = () => {
     if (!currentRow.length) return;
-    const hasContent = currentRow.some((cell) => cell.length > 0);
-    if (!hasContent) {
+    if (!currentRow.some(cellHasContent)) {
       currentRow = [];
       return;
     }
@@ -242,9 +285,12 @@ function rewriteTabularEnvironments(source, warnings) {
     result += `\n${placeholder}\n`;
     lastIndex = envEnd.end;
     const parsed = parseTabularBody(body, warnings);
+    const colInfo = parseColumnAlignments(colSpec);
     tables.push({
       placeholder,
-      alignments: parseColumnAlignments(colSpec),
+      alignments: colInfo.alignments,
+      leftRules: colInfo.leftRules,
+      rightRule: colInfo.rightRule,
       rows: parsed.rows,
       bottomRule: parsed.trailingRule,
     });

@@ -769,17 +769,16 @@ body {
 }
 
 .preview-table {
-  width: 100%;
+  /* In LaTeX, tabular has no borders by default; rules only appear when the
+     source uses \hline / \toprule / etc. or `|` separators in the column spec. */
   border-collapse: collapse;
-  border: 1px solid #ccd1de;
-  background: #fff;
+  background: transparent;
   color: #111622;
   font-size: 0.95rem;
 }
 
 .preview-table td {
-  border: 1px solid #d4d8e4;
-  padding: 0.4rem 0.6rem;
+  padding: 0.3rem 0.6rem;
   vertical-align: top;
 }
 
@@ -792,15 +791,25 @@ body {
 }
 
 .preview-table tr.has-top-rule td {
-  border-top: 2px solid #1f2533;
+  border-top: 1px solid #000;
 }
 
 .preview-table.has-bottom-rule tr:last-child td {
-  border-bottom: 2px solid #1f2533;
+  border-bottom: 1px solid #000;
 }
 
-/* All direct children except the last bigskip+list pair are normal flow */
-.preview-page > .body > .bigskip:last-of-type {
+.preview-table td.has-left-rule {
+  border-left: 1px solid #000;
+}
+
+.preview-table td.has-right-rule {
+  border-right: 1px solid #000;
+}
+
+/* Footnote area: the bigskip+list pair we inject in preprocessFootnotes.
+   Match only when the bigskip is immediately followed by a trailing list,
+   otherwise plain \bigskip and \begin{center} (also a .list) get hit too. */
+.preview-page > .body > .bigskip:last-of-type:has(+ .list:last-child) {
   margin-top: auto;             /* push footnotes to the bottom */
   margin-bottom: 0;
   padding-top: 8pt;
@@ -808,8 +817,7 @@ body {
   width: 40%;
 }
 
-/* Tighten the footnote list against the rule */
-.preview-page > .body > .list:last-child {
+.preview-page > .body > .bigskip:last-of-type + .list:last-child {
   margin-top: 4pt;
   font-size: 0.82rem;           /* \footnotesize */
   margin-bottom: 18pt;

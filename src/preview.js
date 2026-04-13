@@ -124,15 +124,38 @@ function buildPreviewTable(tableInfo) {
     if (row.hasTopRule) {
       tr.classList.add('has-top-rule');
     }
-    row.cells.forEach((cell, index) => {
+    let colIndex = 0;
+    const colCount = tableInfo.alignments.length;
+    row.cells.forEach((cell) => {
       const td = document.createElement('td');
-      const alignment = tableInfo.alignments[index]
-        || tableInfo.alignments[tableInfo.alignments.length - 1]
-        || 'left';
+      let alignment;
+      let hasLeftRule;
+      let hasRightRule;
+      let content;
+      let span;
+      if (cell && typeof cell === 'object' && cell.type === 'multicolumn') {
+        span = cell.span;
+        alignment = cell.align;
+        hasLeftRule = cell.leftRule;
+        hasRightRule = cell.rightRule;
+        content = cell.content;
+        if (span > 1) td.colSpan = span;
+      } else {
+        span = 1;
+        alignment = tableInfo.alignments[colIndex]
+          || tableInfo.alignments[colCount - 1]
+          || 'left';
+        hasLeftRule = !!tableInfo.leftRules?.[colIndex];
+        hasRightRule = (colIndex + 1 === colCount) && !!tableInfo.rightRule;
+        content = cell;
+      }
       td.classList.add(`align-${alignment}`);
-      const fragment = renderInlineLatex(cell);
+      if (hasLeftRule) td.classList.add('has-left-rule');
+      if (hasRightRule) td.classList.add('has-right-rule');
+      const fragment = renderInlineLatex(content);
       td.appendChild(fragment);
       tr.appendChild(td);
+      colIndex += span;
     });
     tbody.appendChild(tr);
   });
