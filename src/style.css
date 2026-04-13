@@ -857,9 +857,33 @@ body {
 }
 
 .preview-error {
-  color: #d33;
+  margin: 0 auto;
+  max-width: 760px;
+  background: #fff5f5;
+  border: 1px solid #f3b8b8;
+  border-left: 4px solid #d33;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  color: #6b1c1c;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.preview-error-title {
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-bottom: 0.4rem;
+  color: #8a1f1f;
+}
+
+.preview-error-body {
+  margin: 0;
   white-space: pre-wrap;
-  font-family: 'Fira Code', monospace;
+  word-break: break-word;
+  font-family: 'Fira Code', ui-monospace, monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #4a1414;
 }
 
 .empty-state {
