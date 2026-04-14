@@ -1055,9 +1055,11 @@ body {
 }
 
 .empty-state {
-  opacity: 0.7;
-  font-size: 0.9rem;
-  padding: 1rem;
+  font-size: 0.95rem;
+  color: #6b7094;
+  text-align: center;
+  padding: 3rem 1.5rem;
+  line-height: 1.5;
 }
 
 @media (max-width: 960px) {
