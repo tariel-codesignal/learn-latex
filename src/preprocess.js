@@ -503,7 +503,10 @@ function extractGeometry(source, warnings) {
 }
 
 function rewriteFigureEnvironments(source, warnings) {
-  if (!source || !source.includes('\\begin{figure')) return source;
+  if (!source || !source.includes('\\begin{figure')) {
+    return { content: source, labels: {} };
+  }
+  const labels = {}; // label name → figure number
   let result = '';
   let lastIndex = 0;
   let figureNumber = 0;
@@ -524,7 +527,7 @@ function rewriteFigureEnvironments(source, warnings) {
     const body = source.slice(cursor, envEnd.start);
     figureNumber += 1;
 
-    // Pull out caption text (brace-balanced) and remove \label / \centering.
+    // Pull out caption text (brace-balanced) and remove \centering.
     let captionText = '';
     let cleaned = body;
     cleaned = cleaned.replace(/\\centering\s*/g, '');
@@ -538,7 +541,14 @@ function rewriteFigureEnvironments(source, warnings) {
       cleaned = cleaned.slice(0, capMatch.index) + cleaned.slice(block.endIndex);
       captionRe.lastIndex = capMatch.index;
     }
-    cleaned = cleaned.replace(/\\label\s*\{[^}]*\}/g, '').trim();
+
+    // Extract \label{...} → store mapping to this figure's number.
+    cleaned = cleaned.replace(/\\label\s*\{([^}]*)\}/g, (_m, labelName) => {
+      const key = labelName.trim();
+      if (key) labels[key] = String(figureNumber);
+      return '';
+    });
+    cleaned = cleaned.trim();
 
     const captionPart = captionText
       ? `\n\n\\textbf{Figure ${figureNumber}:} ${captionText}\n`
@@ -555,7 +565,15 @@ function rewriteFigureEnvironments(source, warnings) {
     }
   }
   result += source.slice(lastIndex);
-  return result;
+  return { content: result, labels };
+}
+
+function resolveRefs(source, labels) {
+  if (!source || !Object.keys(labels).length) return source;
+  return source.replace(/\\ref\s*\{([^}]*)\}/g, (_match, labelName) => {
+    const key = labelName.trim();
+    return labels[key] ?? '??';
+  });
 }
 
 function resolveGraphicLength(value, textWidthMm, textHeightMm) {
@@ -654,12 +672,27 @@ function rewriteIncludeGraphics(source, images, warnings, geometry) {
 export function preprocessLatex(source, options = {}) {
   const warnings = [];
   let content = source ?? '';
+  // Snapshot a few preamble facts before we start stripping packages.
+  const graphicxLoaded = /\\usepackage(?:\[[^\]]*])?\{graphicx\}/i.test(content);
+  const usesIncludeGraphics = /\\includegraphics\b/.test(content);
+  if (usesIncludeGraphics && !graphicxLoaded) {
+    return {
+      content: '',
+      warnings,
+      tables: [],
+      geometry: null,
+      graphics: [],
+      error: 'Undefined control sequence \\includegraphics.\n\nAdd \\usepackage{graphicx} to the preamble before using \\includegraphics.',
+    };
+  }
   const geometryResult = extractGeometry(content, warnings);
   content = geometryResult.content;
   content = stripBooktabsPackage(content, warnings);
   content = rewriteBooktabsCommands(content, warnings);
   content = stripGraphicxPackage(content, warnings);
-  content = rewriteFigureEnvironments(content, warnings);
+  const figureResult = rewriteFigureEnvironments(content, warnings);
+  content = figureResult.content;
+  content = resolveRefs(content, figureResult.labels);
   const graphicsResult = rewriteIncludeGraphics(
     content,
     options.images,

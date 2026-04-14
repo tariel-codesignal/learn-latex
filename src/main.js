@@ -265,9 +265,17 @@ function renderActiveFile() {
       tables,
       geometry,
       graphics,
+      error: preprocessError,
     } = preprocessLatex(rawContent, { images: state.images });
     if (warnings.length) {
       warnings.forEach((message) => console.warn('[preview]', message));
+    }
+    if (preprocessError) {
+      previewApi.renderError(preprocessError);
+      updateRenderStatus({ ok: false, error: preprocessError });
+      applyPaginationResult(0, 1);
+      setStatus('Error', 'error');
+      return;
     }
     const result = previewApi.render(processedContent ?? '', { tables, geometry, graphics });
     updateRenderStatus(result);
@@ -283,6 +291,10 @@ function renderActiveFile() {
     setStatus('Error', 'error');
     console.error(err);
   }
+  // Always sync the latest render result to the server snapshot so
+  // `curl /snapshot` reflects the current document/error state, even when no
+  // edit has happened (e.g. fresh load with a broken starter file).
+  scheduleSnapshot();
 }
 
 function applyPaginationResult(pageCount, previousPage = 1) {

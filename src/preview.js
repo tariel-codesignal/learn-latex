@@ -426,22 +426,25 @@ export function createPreview(container) {
       return { ok: true, pageCount: pageEntries.length };
     } catch (err) {
       console.error('LaTeX.js render error', err);
-      // Clear the half-built page so the error sits at the top of the column.
-      pageEntries = [];
-      container.innerHTML = '';
-      const errorEl = document.createElement('div');
-      errorEl.className = 'preview-error';
-      const heading = document.createElement('div');
-      heading.className = 'preview-error-title';
-      heading.textContent = 'LaTeX render error';
-      const body = document.createElement('pre');
-      body.className = 'preview-error-body';
-      body.textContent = err.message || 'Failed to render document.';
-      errorEl.appendChild(heading);
-      errorEl.appendChild(body);
-      container.appendChild(errorEl);
+      renderError(err.message || 'Failed to render document.');
       return { ok: false, error: err.message, pageCount: 0 };
     }
+  }
+
+  function renderError(message, title = 'LaTeX render error') {
+    pageEntries = [];
+    container.innerHTML = '';
+    const errorEl = document.createElement('div');
+    errorEl.className = 'preview-error';
+    const heading = document.createElement('div');
+    heading.className = 'preview-error-title';
+    heading.textContent = title;
+    const body = document.createElement('pre');
+    body.className = 'preview-error-body';
+    body.textContent = message;
+    errorEl.appendChild(heading);
+    errorEl.appendChild(body);
+    container.appendChild(errorEl);
   }
 
   function setZoom(value) {
@@ -491,6 +494,7 @@ export function createPreview(container) {
 
   return {
     render,
+    renderError,
     setZoom,
     scrollToPage,
     getPages,
