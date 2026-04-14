@@ -1,6 +1,6 @@
 const ALIGN_ENV_PATTERN = /\\begin\{(align\*?)\}([\s\S]*?)\\end\{\1\}/g;
 const BOOKTABS_PACKAGE_PATTERN = /\\usepackage(?:\[[^\]]*])?\{booktabs\}/gi;
-const GRAPHICX_PACKAGE_PATTERN = /\\usepackage(?:\[[^\]]*])?\{graphicx\}/gi;
+const GRAPHICX_PACKAGE_PATTERN = /\\usepackage(?:\[([^\]]*)])?\{graphicx\}/gi;
 const INCLUDEGRAPHICS_PATTERN = /\\includegraphics\s*(?:\[([^\]]*)\])?\s*\{([^}]*)\}/g;
 const FIGURE_BEGIN_PATTERN = /\\begin\{figure\*?\}/g;
 const GRAPHIC_PLACEHOLDER_PREFIX = 'PREVIEWGRAPHICBLOCK';
@@ -598,11 +598,16 @@ function resolveGraphicLength(value, textWidthMm, textHeightMm) {
 function stripGraphicxPackage(source, warnings) {
   if (!source || !GRAPHICX_PACKAGE_PATTERN.test(source)) {
     GRAPHICX_PACKAGE_PATTERN.lastIndex = 0;
-    return source;
+    return { content: source, draft: false };
   }
   GRAPHICX_PACKAGE_PATTERN.lastIndex = 0;
+  let draft = false;
+  const cleaned = source.replace(GRAPHICX_PACKAGE_PATTERN, (_match, optStr) => {
+    if (optStr && /\bdraft\b/i.test(optStr)) draft = true;
+    return '';
+  });
   warnings.push('Removed \\usepackage{graphicx}; preview substitutes uploaded images for \\includegraphics.');
-  return source.replace(GRAPHICX_PACKAGE_PATTERN, '');
+  return { content: cleaned, draft };
 }
 
 function resolveImageName(name, images) {
@@ -625,7 +630,7 @@ function resolveImageName(name, images) {
   return null;
 }
 
-function rewriteIncludeGraphics(source, images, warnings, geometry) {
+function rewriteIncludeGraphics(source, images, warnings, geometry, options = {}) {
   if (!source) return { content: source, graphics: [] };
   if (!INCLUDEGRAPHICS_PATTERN.test(source)) {
     INCLUDEGRAPHICS_PATTERN.lastIndex = 0;
@@ -641,11 +646,12 @@ function rewriteIncludeGraphics(source, images, warnings, geometry) {
     const placeholder = `${GRAPHIC_PLACEHOLDER_PREFIX}${graphics.length}`;
     const opts = optStr ? parseGeometryOptionString(optStr) : {};
     const resolved = resolveImageName(rawName, images);
+    const isDraft = options.draft === true;
     const entry = {
       placeholder,
       requestedName: (rawName || '').trim(),
       resolvedName: resolved,
-      url: resolved ? images[resolved].url : null,
+      url: isDraft ? null : (resolved ? images[resolved].url : null),
       width: resolveGraphicLength(opts.width, textWidthMm, textHeightMm),
       height: resolveGraphicLength(opts.height, textWidthMm, textHeightMm),
       scale: opts.scale ? parseFloat(opts.scale) : null,
@@ -689,7 +695,8 @@ export function preprocessLatex(source, options = {}) {
   content = geometryResult.content;
   content = stripBooktabsPackage(content, warnings);
   content = rewriteBooktabsCommands(content, warnings);
-  content = stripGraphicxPackage(content, warnings);
+  const graphicxResult = stripGraphicxPackage(content, warnings);
+  content = graphicxResult.content;
   const figureResult = rewriteFigureEnvironments(content, warnings);
   content = figureResult.content;
   content = resolveRefs(content, figureResult.labels);
@@ -698,6 +705,7 @@ export function preprocessLatex(source, options = {}) {
     options.images,
     warnings,
     geometryResult.geometry,
+    { draft: graphicxResult.draft },
   );
   content = graphicsResult.content;
   const tabularResult = rewriteTabularEnvironments(content, warnings);
