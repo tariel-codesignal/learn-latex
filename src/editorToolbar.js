@@ -11,7 +11,7 @@ const buttons = [
   { sep: true },
   { mathDropdown: true },
   { sep: true },
-  { label: '• List', title: 'Itemize', block: '\\begin{itemize}\n  \\item \n\\end{itemize}' },
+  { listDropdown: true },
 ];
 
 const sectionOptions = [
@@ -24,9 +24,15 @@ const sectionOptions = [
 ];
 
 const mathOptions = [
-  { label: 'Math mode', wrap: null },
+  { label: '\u03A3 Math', wrap: null },
   { label: 'Inline math \\(...\\)', wrap: ['\\(', '\\)'] },
   { label: 'Display math \\[...\\]', wrap: ['\\[', '\\]'] },
+];
+
+const listOptions = [
+  { label: '\u2261 Lists', block: null },
+  { label: 'Bullet list', block: '\\begin{itemize}\n  \\item \n\\end{itemize}' },
+  { label: 'Numbered list', block: '\\begin{enumerate}\n  \\item \n\\end{enumerate}' },
 ];
 
 function insertWrap(editorView, wrap, options = {}) {
@@ -97,12 +103,12 @@ export function createEditorToolbar(container) {
       return;
     }
 
-    if (btn.dropdown || btn.mathDropdown) {
-      const options = btn.dropdown ? sectionOptions : mathOptions;
+    if (btn.dropdown || btn.mathDropdown || btn.listDropdown) {
+      const options = btn.listDropdown ? listOptions : btn.dropdown ? sectionOptions : mathOptions;
       const resetLabel = options[0].label;
       const select = document.createElement('select');
       select.className = 'editor-toolbar-select';
-      select.title = btn.dropdown ? 'Section type' : 'Math mode';
+      select.title = btn.listDropdown ? 'Lists' : btn.dropdown ? 'Section type' : 'Math mode';
       options.forEach((opt) => {
         const option = document.createElement('option');
         option.textContent = opt.label;
@@ -113,6 +119,15 @@ export function createEditorToolbar(container) {
         const opt = options.find((o) => o.label === select.value);
         if (opt?.wrap && editorViewRef) {
           insertWrap(editorViewRef, opt.wrap);
+        } else if (opt?.block && editorViewRef) {
+          editorViewRef.focus();
+          const { state } = editorViewRef;
+          const range = state.selection.main;
+          const cursorOffset = opt.block.indexOf('\\item ') + '\\item '.length;
+          editorViewRef.dispatch({
+            changes: { from: range.from, to: range.to, insert: opt.block },
+            selection: { anchor: range.from + cursorOffset },
+          });
         }
         select.value = resetLabel;
       });
