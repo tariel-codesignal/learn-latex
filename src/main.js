@@ -151,20 +151,23 @@ function scheduleOutlineUpdate(doc) {
   }, 300);
 }
 
+function sendSnapshotNow() {
+  clearTimeout(snapshotTimer);
+  const payload = {
+    files: state.files,
+    activeFile: state.activeFile,
+    lastRenderResult: state.lastRenderResult,
+  };
+  fetch('/snapshot', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).catch((err) => console.error('Failed to send snapshot', err));
+}
+
 function scheduleSnapshot() {
   clearTimeout(snapshotTimer);
-  snapshotTimer = window.setTimeout(() => {
-    const payload = {
-      files: state.files,
-      activeFile: state.activeFile,
-      lastRenderResult: state.lastRenderResult,
-    };
-    fetch('/snapshot', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }).catch((err) => console.error('Failed to send snapshot', err));
-  }, 1000);
+  snapshotTimer = window.setTimeout(sendSnapshotNow, 1000);
 }
 
 function handleAutoToggle(enabled) {
@@ -275,6 +278,7 @@ function renderActiveFile() {
       updateRenderStatus({ ok: false, error: preprocessError });
       applyPaginationResult(0, 1);
       setStatus('Error', 'error');
+      sendSnapshotNow();
       return;
     }
     const result = previewApi.render(processedContent ?? '', { tables, geometry, graphics });
@@ -291,10 +295,9 @@ function renderActiveFile() {
     setStatus('Error', 'error');
     console.error(err);
   }
-  // Always sync the latest render result to the server snapshot so
-  // `curl /snapshot` reflects the current document/error state, even when no
-  // edit has happened (e.g. fresh load with a broken starter file).
-  scheduleSnapshot();
+  // Send snapshot immediately so `curl /snapshot` reflects what the user sees
+  // the moment the preview updates — no 1s debounce lag.
+  sendSnapshotNow();
 }
 
 function applyPaginationResult(pageCount, previousPage = 1) {
