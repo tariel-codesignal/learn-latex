@@ -7,6 +7,24 @@ import { latex } from 'codemirror-lang-latex';
 
 const editableCompartment = new Compartment();
 
+// Custom Enter handler: insert newline and copy the current line's leading
+// whitespace.  This avoids the latex language plugin's auto-indent which
+// incorrectly adds a tab after comment lines (and can be surprising in other
+// contexts too).
+function insertNewlineKeepIndent({ state, dispatch }) {
+  const range = state.selection.main;
+  const line = state.doc.lineAt(range.head);
+  const indent = line.text.match(/^\s*/)[0];
+  const insert = '\n' + indent;
+  dispatch(state.update({
+    changes: { from: range.from, to: range.to, insert },
+    selection: { anchor: range.from + insert.length },
+    scrollIntoView: true,
+    userEvent: 'input',
+  }));
+  return true;
+}
+
 export function createEditor({ parent, doc = '', readOnly = false, onChange }) {
   const view = new EditorView({
     state: EditorState.create({
@@ -15,7 +33,7 @@ export function createEditor({ parent, doc = '', readOnly = false, onChange }) {
         lineNumbers(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
-        keymap.of([...defaultKeymap, indentWithTab, ...historyKeymap]),
+        keymap.of([{ key: 'Enter', run: insertNewlineKeepIndent }, ...defaultKeymap, indentWithTab, ...historyKeymap]),
         history(),
         bracketMatching(),
         oneDark,
