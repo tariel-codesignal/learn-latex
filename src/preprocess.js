@@ -578,12 +578,41 @@ function rewriteFigureEnvironments(source, warnings) {
   return { content: result, labels };
 }
 
+function extractEquationLabels(source) {
+  if (!source) return { content: source, labels: {} };
+  const labels = {};
+  let equationNumber = 0;
+  // latex.js doesn't support the equation environment — rewrite to \[...\].
+  // Numbered equations get a \tag{N} so KaTeX renders the number on the right.
+  const content = source.replace(
+    /\\begin\{(equation\*?)\}([\s\S]*?)\\end\{\1\}/g,
+    (_match, envName, body) => {
+      const isNumbered = !envName.includes('*');
+      if (isNumbered) equationNumber += 1;
+      const cleaned = body.replace(/\\label\s*\{([^}]*)\}/g, (_m, labelName) => {
+        const key = labelName.trim();
+        if (key && isNumbered) labels[key] = String(equationNumber);
+        return '';
+      });
+      const tag = isNumbered ? `\\tag{${equationNumber}}` : '';
+      return `\\[${cleaned}${tag}\\]`;
+    },
+  );
+  return { content, labels };
+}
+
 function resolveRefs(source, labels) {
   if (!source || !Object.keys(labels).length) return source;
-  return source.replace(/\\ref\s*\{([^}]*)\}/g, (_match, labelName) => {
+  let result = source.replace(/\\eqref\s*\{([^}]*)\}/g, (_match, labelName) => {
+    const key = labelName.trim();
+    const num = labels[key];
+    return num ? `(${num})` : '(??)';
+  });
+  result = result.replace(/\\ref\s*\{([^}]*)\}/g, (_match, labelName) => {
     const key = labelName.trim();
     return labels[key] ?? '??';
   });
+  return result;
 }
 
 function resolveGraphicLength(value, textWidthMm, textHeightMm) {
@@ -710,7 +739,10 @@ export function preprocessLatex(source, options = {}) {
   content = graphicxResult.content;
   const figureResult = rewriteFigureEnvironments(content, warnings);
   content = figureResult.content;
-  content = resolveRefs(content, figureResult.labels);
+  const equationResult = extractEquationLabels(content);
+  content = equationResult.content;
+  const allLabels = { ...figureResult.labels, ...equationResult.labels };
+  content = resolveRefs(content, allLabels);
   const graphicsResult = rewriteIncludeGraphics(
     content,
     options.images,
