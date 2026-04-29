@@ -1,5 +1,6 @@
 const ALIGN_ENV_PATTERN = /\\begin\{(align\*?)\}([\s\S]*?)\\end\{\1\}/g;
 const BOOKTABS_PACKAGE_PATTERN = /\\usepackage(?:\[[^\]]*])?\{booktabs\}/gi;
+const MATH_PACKAGE_PATTERN = /\\usepackage(?:\[[^\]]*])?\{(?:amsmath|amssymb|amsfonts|mathtools)\}/gi;
 const GRAPHICX_PACKAGE_PATTERN = /\\usepackage(?:\[([^\]]*)])?\{graphicx\}/gi;
 const INCLUDEGRAPHICS_PATTERN = /\\includegraphics\s*(?:\[([^\]]*)\])?\s*\{([^}]*)\}/g;
 const FIGURE_BEGIN_PATTERN = /\\begin\{figure\*?\}/g;
@@ -331,6 +332,15 @@ function stripBooktabsPackage(source, warnings) {
   BOOKTABS_PACKAGE_PATTERN.lastIndex = 0;
   warnings.push('Removed \\usepackage{booktabs}; preview applies built-in replacements for booktabs rules.');
   return source.replace(BOOKTABS_PACKAGE_PATTERN, '');
+}
+
+function stripMathPackages(source) {
+  if (!source || !MATH_PACKAGE_PATTERN.test(source)) {
+    MATH_PACKAGE_PATTERN.lastIndex = 0;
+    return source;
+  }
+  MATH_PACKAGE_PATTERN.lastIndex = 0;
+  return source.replace(MATH_PACKAGE_PATTERN, '');
 }
 
 function rewriteBooktabsCommands(source, warnings) {
@@ -695,6 +705,7 @@ export function preprocessLatex(source, options = {}) {
   content = geometryResult.content;
   content = stripBooktabsPackage(content, warnings);
   content = rewriteBooktabsCommands(content, warnings);
+  content = stripMathPackages(content);
   const graphicxResult = stripGraphicxPackage(content, warnings);
   content = graphicxResult.content;
   const figureResult = rewriteFigureEnvironments(content, warnings);
