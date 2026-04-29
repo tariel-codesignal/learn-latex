@@ -1,4 +1,4 @@
-const ALIGN_ENV_PATTERN = /\\begin\{(align\*?)\}([\s\S]*?)\\end\{\1\}/g;
+const MATH_ENV_PATTERN = /\\begin\{(equation\*?|align\*?)\}([\s\S]*?)\\end\{\1\}/g;
 const BOOKTABS_PACKAGE_PATTERN = /\\usepackage(?:\[[^\]]*])?\{booktabs\}/gi;
 const MATH_PACKAGE_PATTERN = /\\usepackage(?:\[[^\]]*])?\{(?:amsmath|amssymb|amsfonts|mathtools)\}/gi;
 const GRAPHICX_PACKAGE_PATTERN = /\\usepackage(?:\[([^\]]*)])?\{graphicx\}/gi;
@@ -309,19 +309,6 @@ function rewriteTabularEnvironments(source, warnings) {
   return { content: result, tables };
 }
 
-function rewriteAlignEnvironments(source, warnings) {
-  if (!source || !ALIGN_ENV_PATTERN.test(source)) {
-    ALIGN_ENV_PATTERN.lastIndex = 0;
-    return source;
-  }
-
-  ALIGN_ENV_PATTERN.lastIndex = 0;
-  return source.replace(ALIGN_ENV_PATTERN, (_, envName, body) => {
-    warnings.push(`Converted \\begin{${envName}} ... \\end{${envName}} to an aligned display block for browser preview.`);
-    const trimmed = body.trim();
-    return `\\[\n\\begin{aligned}\n${trimmed}\n\\end{aligned}\n\\]`;
-  });
-}
 
 function stripBooktabsPackage(source, warnings) {
   if (!source) return source;
@@ -578,26 +565,56 @@ function rewriteFigureEnvironments(source, warnings) {
   return { content: result, labels };
 }
 
-function extractEquationLabels(source) {
+function rewriteMathEnvironments(source, warnings) {
   if (!source) return { content: source, labels: {} };
   const labels = {};
-  let equationNumber = 0;
-  // latex.js doesn't support the equation environment — rewrite to \[...\].
-  // Numbered equations get a \tag{N} so KaTeX renders the number on the right.
-  const content = source.replace(
-    /\\begin\{(equation\*?)\}([\s\S]*?)\\end\{\1\}/g,
-    (_match, envName, body) => {
-      const isNumbered = !envName.includes('*');
-      if (isNumbered) equationNumber += 1;
-      const cleaned = body.replace(/\\label\s*\{([^}]*)\}/g, (_m, labelName) => {
-        const key = labelName.trim();
-        if (key && isNumbered) labels[key] = String(equationNumber);
-        return '';
-      });
-      const tag = isNumbered ? `\\tag{${equationNumber}}` : '';
-      return `\\[${cleaned}${tag}\\]`;
-    },
-  );
+  let eqNumber = 0;
+  let warnedAlign = false;
+
+  const content = source.replace(MATH_ENV_PATTERN, (_match, envName, body) => {
+    const isStarred = envName.includes('*');
+    const isAlign = envName.startsWith('align');
+
+    if (isAlign) {
+      if (!warnedAlign) {
+        warnings.push(`Converted \\begin{${envName}} to aligned display block for browser preview.`);
+        warnedAlign = true;
+      }
+      // Split into lines on \\ (with optional [length] arg).
+      const lines = body.split(/\\\\\s*(?:\[[^\]]*\])?\s*/);
+      const processed = [];
+      for (const raw of lines) {
+        let line = raw.trim();
+        if (!line) continue;
+        const hasNonumber = /\\(nonumber|notag)\b/.test(line);
+        line = line.replace(/\\(nonumber|notag)\b\s*/g, '');
+        line = line.replace(/\\label\s*\{([^}]*)\}/g, (_m, labelName) => {
+          const key = labelName.trim();
+          if (key && !isStarred && !hasNonumber) labels[key] = String(eqNumber + 1);
+          return '';
+        });
+        if (!isStarred && !hasNonumber) {
+          eqNumber += 1;
+          line += ` && \\text{(${eqNumber})}`;
+        }
+        processed.push(line);
+      }
+      return `\\[\\begin{aligned}\n${processed.join(' \\\\\n')}\n\\end{aligned}\\]`;
+    }
+
+    // equation / equation*
+    let cleaned = body.replace(/\\label\s*\{([^}]*)\}/g, (_m, labelName) => {
+      const key = labelName.trim();
+      if (key && !isStarred) labels[key] = String(eqNumber + 1);
+      return '';
+    });
+    if (!isStarred) {
+      eqNumber += 1;
+      return `\\[${cleaned}\\tag{${eqNumber}}\\]`;
+    }
+    return `\\[${cleaned}\\]`;
+  });
+
   return { content, labels };
 }
 
@@ -739,9 +756,9 @@ export function preprocessLatex(source, options = {}) {
   content = graphicxResult.content;
   const figureResult = rewriteFigureEnvironments(content, warnings);
   content = figureResult.content;
-  const equationResult = extractEquationLabels(content);
-  content = equationResult.content;
-  const allLabels = { ...figureResult.labels, ...equationResult.labels };
+  const mathResult = rewriteMathEnvironments(content, warnings);
+  content = mathResult.content;
+  const allLabels = { ...figureResult.labels, ...mathResult.labels };
   content = resolveRefs(content, allLabels);
   const graphicsResult = rewriteIncludeGraphics(
     content,
@@ -753,7 +770,6 @@ export function preprocessLatex(source, options = {}) {
   content = graphicsResult.content;
   const tabularResult = rewriteTabularEnvironments(content, warnings);
   content = tabularResult.content;
-  content = rewriteAlignEnvironments(content, warnings);
   return {
     content,
     warnings,
