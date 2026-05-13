@@ -268,6 +268,7 @@ function renderActiveFile() {
       tables,
       geometry,
       graphics,
+      toc,
       error: preprocessError,
     } = preprocessLatex(rawContent, { images: state.images });
     if (warnings.length) {
@@ -281,7 +282,7 @@ function renderActiveFile() {
       sendSnapshotNow();
       return;
     }
-    const result = previewApi.render(processedContent ?? '', { tables, geometry, graphics });
+    const result = previewApi.render(processedContent ?? '', { tables, geometry, graphics, toc });
     updateRenderStatus(result);
     applyPaginationResult(result.pageCount ?? 0, previousPage);
     if (result.ok) {

@@ -936,6 +936,74 @@ body {
   line-height: 1.3;
 }
 
+/* Table of contents — built post-render since latex.js is single-pass. */
+.preview-toc {
+  margin: 0.4rem 0 1rem;
+  font-family: "Computer Modern Serif", serif;
+  font-size: 11pt;
+}
+
+.preview-toc-entry {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.18rem 0;
+  line-height: 1.4;
+}
+
+.preview-toc-level-2 {
+  padding-left: 1.4em;
+}
+
+.preview-toc-level-3 {
+  padding-left: 2.8em;
+}
+
+.preview-toc-number {
+  font-weight: bold;
+  min-width: 2em;
+}
+
+.preview-toc-level-2 .preview-toc-number {
+  min-width: 2.6em;
+  font-weight: normal;
+}
+
+.preview-toc-level-3 .preview-toc-number {
+  min-width: 3.2em;
+  font-weight: normal;
+}
+
+.preview-toc-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preview-toc-level-1 .preview-toc-name {
+  font-weight: bold;
+}
+
+.preview-toc-dots {
+  flex: 1;
+  border-bottom: 1px dotted #000;
+  align-self: end;
+  height: 0;
+  margin: 0 0.4em 0.32em;
+  min-width: 1em;
+}
+
+.preview-toc-page {
+  font-weight: bold;
+  min-width: 1.5em;
+  text-align: right;
+}
+
+.preview-toc-level-2 .preview-toc-page,
+.preview-toc-level-3 .preview-toc-page {
+  font-weight: normal;
+}
+
 .preview-table {
   /* In LaTeX, tabular has no borders by default; rules only appear when the
      source uses \hline / \toprule / etc. or `|` separators in the column spec. */

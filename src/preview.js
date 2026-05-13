@@ -231,6 +231,57 @@ function replaceTabularPlaceholders(root, tables = []) {
   replacePlaceholders(root, tables, buildPreviewTable);
 }
 
+function buildTocElement(toc) {
+  const host = document.createElement('div');
+  host.className = 'preview-toc';
+  toc.entries.forEach((entry) => {
+    const row = document.createElement('div');
+    row.className = `preview-toc-entry preview-toc-level-${entry.level}`;
+    const num = document.createElement('span');
+    num.className = 'preview-toc-number';
+    num.textContent = entry.number;
+    const name = document.createElement('span');
+    name.className = 'preview-toc-name';
+    name.textContent = entry.name;
+    const dots = document.createElement('span');
+    dots.className = 'preview-toc-dots';
+    const page = document.createElement('span');
+    page.className = 'preview-toc-page';
+    page.textContent = ' '; // placeholder em-space until paginate resolves
+    row.appendChild(num);
+    row.appendChild(name);
+    row.appendChild(dots);
+    row.appendChild(page);
+    host.appendChild(row);
+  });
+  return host;
+}
+
+function replaceTocPlaceholder(root, toc) {
+  if (!toc) return;
+  replacePlaceholders(root, [toc], buildTocElement);
+}
+
+function resolveTocPageNumbers(container, toc) {
+  if (!toc) return;
+  const tocRows = container.querySelectorAll('.preview-toc-entry .preview-toc-page');
+  if (!tocRows.length) return;
+  // Find every numbered section header (text starts with a digit) in document
+  // order across all pages and pair them with the rows.
+  const pages = container.querySelectorAll('.preview-page');
+  const found = [];
+  pages.forEach((page, idx) => {
+    const headings = page.querySelectorAll('h2, h3, h4');
+    headings.forEach((h) => {
+      const text = (h.textContent || '').trim();
+      if (/^\d/.test(text)) found.push(idx + 1);
+    });
+  });
+  tocRows.forEach((cell, i) => {
+    cell.textContent = String(found[i] ?? '?');
+  });
+}
+
 /**
  * After latex.js renders into a single page, split the .body children across
  * multiple pages if the content overflows.
@@ -387,6 +438,7 @@ export function createPreview(container) {
   function render(content, options = {}) {
     const tables = options.tables ?? [];
     const graphics = options.graphics ?? [];
+    const toc = options.toc ?? null;
     activeGeometry = options.geometry ?? null;
     pageEntries = [];
     container.innerHTML = '';
@@ -413,6 +465,7 @@ export function createPreview(container) {
       applyGeometryToPage(page);
       replaceTabularPlaceholders(page, tables);
       replaceGraphicPlaceholders(page, graphics);
+      replaceTocPlaceholder(page, toc);
 
       // Split into multiple pages if content overflows
       paginate(container, page, {
@@ -420,6 +473,7 @@ export function createPreview(container) {
         onPageCreated: applyGeometryToPage,
       });
 
+      resolveTocPageNumbers(container, toc);
       buildPageEntries();
       applyZoom();
       centerHorizontalScroll();

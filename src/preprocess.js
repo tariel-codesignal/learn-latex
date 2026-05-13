@@ -4,6 +4,8 @@ const MATH_PACKAGE_PATTERN = /\\usepackage(?:\[[^\]]*])?\{(?:amsmath|amssymb|ams
 const GRAPHICX_PACKAGE_PATTERN = /\\usepackage(?:\[([^\]]*)])?\{graphicx\}/gi;
 const INCLUDEGRAPHICS_PATTERN = /\\includegraphics\s*(?:\[([^\]]*)\])?\s*\{([^}]*)\}/g;
 const FIGURE_BEGIN_PATTERN = /\\begin\{figure\*?\}/g;
+const TOC_PATTERN = /\\tableofcontents\b/g;
+const TOC_PLACEHOLDER_PREFIX = 'PREVIEWTOCBLOCK';
 const GRAPHIC_PLACEHOLDER_PREFIX = 'PREVIEWGRAPHICBLOCK';
 const IMAGE_EXTENSIONS = ['', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.PNG', '.JPG', '.JPEG'];
 const DEFAULT_TEXT_WIDTH_MM = 210 - 25.4 - 25.4;   // A4 with 1in margins
@@ -618,6 +620,55 @@ function rewriteMathEnvironments(source, warnings) {
   return { content, labels };
 }
 
+function stripLatexFormatting(name) {
+  // Strip common formatting commands so the name displays as plain text
+  // in the TOC. Keeps the inner argument.
+  return (name || '')
+    .replace(/\\(textbf|textit|emph|texttt|textsf|textrm)\s*\{([^}]*)\}/g, '$2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractToc(source) {
+  if (!source || !TOC_PATTERN.test(source)) {
+    TOC_PATTERN.lastIndex = 0;
+    return { content: source, toc: null };
+  }
+  TOC_PATTERN.lastIndex = 0;
+  // Scan the source for numbered section commands (skip starred variants).
+  const entries = [];
+  let sectionN = 0;
+  let subN = 0;
+  let subsubN = 0;
+  const sectionRe = /\\(section|subsection|subsubsection)\s*\{([^}]*)\}/g;
+  let m;
+  while ((m = sectionRe.exec(source))) {
+    // The regex \\section\{...\} won't match \section* (the `*` is between
+    // \section and `{`), so starred sections are already excluded.
+    const type = m[1];
+    const name = stripLatexFormatting(m[2]);
+    if (type === 'section') {
+      sectionN += 1;
+      subN = 0;
+      subsubN = 0;
+      entries.push({ level: 1, number: `${sectionN}`, name });
+    } else if (type === 'subsection') {
+      subN += 1;
+      subsubN = 0;
+      entries.push({ level: 2, number: `${sectionN}.${subN}`, name });
+    } else {
+      subsubN += 1;
+      entries.push({ level: 3, number: `${sectionN}.${subN}.${subsubN}`, name });
+    }
+  }
+  const placeholder = `${TOC_PLACEHOLDER_PREFIX}0`;
+  const content = source.replace(
+    TOC_PATTERN,
+    `\\section*{Contents}\n\n${placeholder}\n\n`,
+  );
+  return { content, toc: { placeholder, entries } };
+}
+
 function resolveRefs(source, labels) {
   if (!source || !Object.keys(labels).length) return source;
   let result = source.replace(/\\eqref\s*\{([^}]*)\}/g, (_match, labelName) => {
@@ -749,6 +800,8 @@ export function preprocessLatex(source, options = {}) {
   }
   const geometryResult = extractGeometry(content, warnings);
   content = geometryResult.content;
+  const tocResult = extractToc(content);
+  content = tocResult.content;
   content = stripBooktabsPackage(content, warnings);
   content = rewriteBooktabsCommands(content, warnings);
   content = stripMathPackages(content);
@@ -776,5 +829,6 @@ export function preprocessLatex(source, options = {}) {
     tables: tabularResult.tables,
     geometry: geometryResult.geometry,
     graphics: graphicsResult.graphics,
+    toc: tocResult.toc,
   };
 }
