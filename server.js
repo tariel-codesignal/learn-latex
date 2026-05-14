@@ -11,6 +11,8 @@ const isProduction = process.env.IS_PRODUCTION === 'true';
 const configPath = path.join(__dirname, 'config.json');
 
 let snapshot = null;
+let snapshotEpoch = 0;
+let snapshotRevision = 0;
 
 // Pre-loaded image store (in-memory). Lives only as long as the server process.
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB per image
@@ -40,6 +42,19 @@ function normalizeRenderResult(status) {
   };
 }
 
+function normalizeSnapshotVersion(epoch, revision) {
+  const nextEpoch = Number(epoch);
+  const nextRevision = Number(revision);
+  if (!Number.isFinite(nextEpoch) || !Number.isSafeInteger(nextRevision) || nextRevision < 1) {
+    return null;
+  }
+  return { epoch: nextEpoch, revision: nextRevision };
+}
+
+function isStaleSnapshotVersion({ epoch, revision }) {
+  return epoch < snapshotEpoch || (epoch === snapshotEpoch && revision < snapshotRevision);
+}
+
 app.use(express.json({ limit: '2mb' }));
 
 async function readConfig() {
@@ -58,10 +73,25 @@ app.get('/config', async (req, res) => {
 });
 
 app.post('/snapshot', (req, res) => {
-  const { files, activeFile, lastRenderResult } = req.body || {};
+  const {
+    files,
+    activeFile,
+    lastRenderResult,
+    snapshotEpoch: nextEpoch,
+    snapshotRevision: nextRevision,
+  } = req.body || {};
   if (!files || typeof files !== 'object') {
     return res.status(400).json({ error: 'Invalid payload' });
   }
+  const version = normalizeSnapshotVersion(nextEpoch, nextRevision);
+  if (!version) {
+    return res.status(400).json({ error: 'Invalid snapshot version' });
+  }
+  if (isStaleSnapshotVersion(version)) {
+    return res.json({ status: 'stale' });
+  }
+  snapshotEpoch = version.epoch;
+  snapshotRevision = version.revision;
   snapshot = {
     files,
     activeFile: activeFile ?? '',

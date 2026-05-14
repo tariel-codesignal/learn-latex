@@ -35,6 +35,8 @@ function keepFileEsbuildPlugin() {
 
 function devApiPlugin() {
   let snapshot = null;
+  let snapshotEpoch = 0;
+  let snapshotRevision = 0;
 
   async function readConfig() {
     const raw = await fs.readFile(configPath, 'utf-8');
@@ -48,6 +50,30 @@ function devApiPlugin() {
     }
     const raw = Buffer.concat(chunks).toString('utf-8');
     return raw ? JSON.parse(raw) : {};
+  }
+
+  function normalizeRenderResult(status) {
+    if (!status || typeof status !== 'object') return null;
+    const ok = Boolean(status.ok);
+    return {
+      ok,
+      error: ok ? null : (typeof status.error === 'string' ? status.error : null),
+      file: typeof status.file === 'string' ? status.file : '',
+      timestamp: typeof status.timestamp === 'string' ? status.timestamp : null,
+    };
+  }
+
+  function normalizeSnapshotVersion(epoch, revision) {
+    const nextEpoch = Number(epoch);
+    const nextRevision = Number(revision);
+    if (!Number.isFinite(nextEpoch) || !Number.isSafeInteger(nextRevision) || nextRevision < 1) {
+      return null;
+    }
+    return { epoch: nextEpoch, revision: nextRevision };
+  }
+
+  function isStaleSnapshotVersion({ epoch, revision }) {
+    return epoch < snapshotEpoch || (epoch === snapshotEpoch && revision < snapshotRevision);
   }
 
   return {
@@ -69,7 +95,27 @@ function devApiPlugin() {
         if (req.method === 'POST' && req.url.startsWith('/snapshot')) {
           try {
             const body = await parseBody(req);
-            snapshot = { files: body.files ?? {}, activeFile: body.activeFile ?? '' };
+            if (!body.files || typeof body.files !== 'object') {
+              throw new Error('Invalid payload');
+            }
+            const version = normalizeSnapshotVersion(body.snapshotEpoch, body.snapshotRevision);
+            if (!version) {
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: 'Invalid snapshot version' }));
+              return;
+            }
+            if (isStaleSnapshotVersion(version)) {
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ status: 'stale' }));
+              return;
+            }
+            snapshotEpoch = version.epoch;
+            snapshotRevision = version.revision;
+            snapshot = {
+              files: body.files,
+              activeFile: body.activeFile ?? '',
+              lastRenderResult: normalizeRenderResult(body.lastRenderResult),
+            };
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify({ status: 'ok' }));
           } catch (err) {
@@ -80,7 +126,7 @@ function devApiPlugin() {
         }
         if (req.method === 'GET' && (req.url.startsWith('/snapshot') || req.url.startsWith('/content'))) {
           res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify(snapshot ?? { files: {}, activeFile: '' }));
+          res.end(JSON.stringify(snapshot ?? { files: {}, activeFile: '', lastRenderResult: null }));
           return;
         }
         next();

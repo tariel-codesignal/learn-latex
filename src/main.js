@@ -38,6 +38,10 @@ let outlineApi;
 let imageUploadApi;
 let renderTimer = null;
 let snapshotTimer = null;
+const snapshotEpoch = Number.isFinite(window.performance?.timeOrigin)
+  ? window.performance.timeOrigin
+  : Date.now();
+let snapshotRevision = 0;
 let outlineTimer = null;
 let previewScrollRaf = null;
 
@@ -154,6 +158,8 @@ function scheduleOutlineUpdate(doc) {
 function sendSnapshotNow() {
   clearTimeout(snapshotTimer);
   const payload = {
+    snapshotEpoch,
+    snapshotRevision: ++snapshotRevision,
     files: state.files,
     activeFile: state.activeFile,
     lastRenderResult: state.lastRenderResult,
