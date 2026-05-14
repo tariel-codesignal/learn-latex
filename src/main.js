@@ -8,6 +8,9 @@ import { createOutline } from './outline.js';
 import { preprocessLatex } from './preprocess.js';
 import { createImageUploadModal } from './imageUpload.js';
 
+const TEX_FILENAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 _.-]*\.tex$/i;
+const TEX_FILENAME_MESSAGE = 'Start with a letter or number, end with .tex, and use only letters, numbers, spaces, dots, hyphens, or underscores.';
+
 const state = {
   files: {},
   activeFile: '',
@@ -340,11 +343,26 @@ function setActiveFile(filename) {
   outlineApi?.update(state.files[filename]);
 }
 
-function handleCreateFile(filename) {
+function validateTexFilename(filename) {
+  if (typeof filename !== 'string') {
+    return { ok: false, message: 'File name is required.' };
+  }
   const trimmed = filename.trim();
   if (!trimmed) {
     return { ok: false, message: 'File name is required.' };
   }
+  if (!TEX_FILENAME_PATTERN.test(trimmed)) {
+    return { ok: false, message: TEX_FILENAME_MESSAGE };
+  }
+  return { ok: true, filename: trimmed };
+}
+
+function handleCreateFile(filename) {
+  const validation = validateTexFilename(filename);
+  if (!validation.ok) {
+    return validation;
+  }
+  const trimmed = validation.filename;
   if (Object.prototype.hasOwnProperty.call(state.files, trimmed)) {
     return { ok: false, message: 'A file with that name already exists.' };
   }
@@ -363,8 +381,13 @@ function handleRenameFile(oldName, newName) {
     alert('This file is read-only.');
     return;
   }
-  const trimmed = newName.trim();
-  if (!trimmed) return;
+  const validation = validateTexFilename(newName);
+  if (!validation.ok) {
+    alert(validation.message);
+    return;
+  }
+  const trimmed = validation.filename;
+  if (trimmed === oldName) return;
   if (Object.prototype.hasOwnProperty.call(state.files, trimmed)) {
     alert('A file with that name already exists.');
     return;
