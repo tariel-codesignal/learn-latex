@@ -782,6 +782,28 @@ function rewriteIncludeGraphics(source, images, warnings, geometry, options = {}
   return { content: result, graphics };
 }
 
+function stripLineComments(source) {
+  // Remove `%` line comments while preserving `\%` (escaped percent).
+  if (!source || !source.includes('%')) return source;
+  const lines = source.split('\n');
+  return lines.map((line) => {
+    let out = '';
+    let i = 0;
+    while (i < line.length) {
+      const ch = line[i];
+      if (ch === '\\' && i + 1 < line.length) {
+        out += ch + line[i + 1];
+        i += 2;
+        continue;
+      }
+      if (ch === '%') break;
+      out += ch;
+      i += 1;
+    }
+    return out;
+  }).join('\n');
+}
+
 export function preprocessLatex(source, options = {}) {
   const warnings = [];
   let content = source ?? '';
@@ -796,6 +818,26 @@ export function preprocessLatex(source, options = {}) {
       geometry: null,
       graphics: [],
       error: 'Undefined control sequence \\includegraphics.\n\nAdd \\usepackage{graphicx} to the preamble before using \\includegraphics.',
+    };
+  }
+  // Uppercase Greek letters that share shape with Latin (\Alpha, \Beta, …) are
+  // NOT defined as control sequences in standard LaTeX — you just type the Latin
+  // letter. Match real LaTeX's "Undefined control sequence" behavior here.
+  // Skip `%`-comments (but not `\%`) before checking so commented-out examples
+  // don't trigger the error.
+  const contentForCheck = stripLineComments(content);
+  const undefinedGreekMatch = /\\(Alpha|Beta|Epsilon|Zeta|Eta|Iota|Kappa|Mu|Nu|Omicron|Rho|Tau|Chi)\b/.exec(contentForCheck);
+  if (undefinedGreekMatch) {
+    return {
+      content: '',
+      warnings,
+      tables: [],
+      geometry: null,
+      graphics: [],
+      error: `Undefined control sequence \\${undefinedGreekMatch[1]}.\n\n`
+        + `Uppercase Greek letters with shapes identical to Latin (\\Alpha, \\Beta, \\Epsilon, \\Zeta, \\Eta, `
+        + `\\Iota, \\Kappa, \\Mu, \\Nu, \\Omicron, \\Rho, \\Tau, \\Chi) are not defined in LaTeX. `
+        + `Use the corresponding Latin capital instead (e.g. A, B, E).`,
     };
   }
   const geometryResult = extractGeometry(content, warnings);
