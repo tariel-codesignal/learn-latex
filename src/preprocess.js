@@ -782,6 +782,17 @@ function rewriteIncludeGraphics(source, images, warnings, geometry, options = {}
   return { content: result, graphics };
 }
 
+function fixNotEqualGlyph(source) {
+  // KaTeX renders \neq / \ne as a \not slash overlay on `=`, but its \@not
+  // glyph doesn't render cleanly through latex.js (shows as boxes). Bypass
+  // the overlay by emitting the actual ≠ codepoint (U+2260) directly — the
+  // character lives in KaTeX_Main and renders crisply.
+  if (!source) return source;
+  return source
+    .replace(/\\neq\b/g, '{\\char"2260}')
+    .replace(/\\ne\b/g, '{\\char"2260}');
+}
+
 function stripLineComments(source) {
   // Remove `%` line comments while preserving `\%` (escaped percent).
   if (!source || !source.includes('%')) return source;
@@ -865,6 +876,7 @@ export function preprocessLatex(source, options = {}) {
   content = graphicsResult.content;
   const tabularResult = rewriteTabularEnvironments(content, warnings);
   content = tabularResult.content;
+  content = fixNotEqualGlyph(content);
   return {
     content,
     warnings,
