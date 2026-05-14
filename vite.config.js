@@ -35,8 +35,6 @@ function keepFileEsbuildPlugin() {
 
 function devApiPlugin() {
   let snapshot = null;
-  let snapshotEpoch = 0;
-  let snapshotRevision = 0;
 
   async function readConfig() {
     const raw = await fs.readFile(configPath, 'utf-8');
@@ -63,19 +61,6 @@ function devApiPlugin() {
     };
   }
 
-  function normalizeSnapshotVersion(epoch, revision) {
-    const nextEpoch = Number(epoch);
-    const nextRevision = Number(revision);
-    if (!Number.isFinite(nextEpoch) || !Number.isSafeInteger(nextRevision) || nextRevision < 1) {
-      return null;
-    }
-    return { epoch: nextEpoch, revision: nextRevision };
-  }
-
-  function isStaleSnapshotVersion({ epoch, revision }) {
-    return epoch < snapshotEpoch || (epoch === snapshotEpoch && revision < snapshotRevision);
-  }
-
   return {
     name: 'learn-latex-dev-api',
     configureServer(server) {
@@ -98,19 +83,6 @@ function devApiPlugin() {
             if (!body.files || typeof body.files !== 'object') {
               throw new Error('Invalid payload');
             }
-            const version = normalizeSnapshotVersion(body.snapshotEpoch, body.snapshotRevision);
-            if (!version) {
-              res.statusCode = 400;
-              res.end(JSON.stringify({ error: 'Invalid snapshot version' }));
-              return;
-            }
-            if (isStaleSnapshotVersion(version)) {
-              res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ status: 'stale' }));
-              return;
-            }
-            snapshotEpoch = version.epoch;
-            snapshotRevision = version.revision;
             snapshot = {
               files: body.files,
               activeFile: body.activeFile ?? '',

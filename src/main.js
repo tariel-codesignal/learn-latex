@@ -40,11 +40,8 @@ let editorToolbarApi;
 let outlineApi;
 let imageUploadApi;
 let renderTimer = null;
-let snapshotTimer = null;
-const snapshotEpoch = Number.isFinite(window.performance?.timeOrigin)
-  ? window.performance.timeOrigin
-  : Date.now();
-let snapshotRevision = 0;
+let snapshotInFlight = false;
+let snapshotQueued = false;
 let outlineTimer = null;
 let previewScrollRaf = null;
 
@@ -76,7 +73,7 @@ function initModules() {
     onChange: (doc) => {
       if (!state.activeFile) return;
       state.files[state.activeFile] = doc;
-      scheduleSnapshot();
+      sendSnapshotNow();
       scheduleOutlineUpdate(doc);
       if (state.autoRender) {
         scheduleRender();
@@ -91,6 +88,7 @@ function initModules() {
     onSelectFile: (filename) => {
       if (filename === state.activeFile) return;
       setActiveFile(filename);
+      sendSnapshotNow();
       if (state.autoRender) {
         scheduleRender({ immediate: true });
       }
@@ -159,10 +157,12 @@ function scheduleOutlineUpdate(doc) {
 }
 
 function sendSnapshotNow() {
-  clearTimeout(snapshotTimer);
+  if (snapshotInFlight) {
+    snapshotQueued = true;
+    return;
+  }
+  snapshotInFlight = true;
   const payload = {
-    snapshotEpoch,
-    snapshotRevision: ++snapshotRevision,
     files: state.files,
     activeFile: state.activeFile,
     lastRenderResult: state.lastRenderResult,
@@ -171,12 +171,15 @@ function sendSnapshotNow() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-  }).catch((err) => console.error('Failed to send snapshot', err));
-}
-
-function scheduleSnapshot() {
-  clearTimeout(snapshotTimer);
-  snapshotTimer = window.setTimeout(sendSnapshotNow, 1000);
+  })
+    .catch((err) => console.error('Failed to send snapshot', err))
+    .finally(() => {
+      snapshotInFlight = false;
+      if (snapshotQueued) {
+        snapshotQueued = false;
+        sendSnapshotNow();
+      }
+    });
 }
 
 function handleAutoToggle(enabled) {
@@ -369,7 +372,7 @@ function handleCreateFile(filename) {
   state.files = { ...state.files, [trimmed]: '' };
   setActiveFile(trimmed);
   fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles], state.images);
-  scheduleSnapshot();
+  sendSnapshotNow();
   if (state.autoRender) {
     scheduleRender({ immediate: true });
   }
@@ -402,7 +405,7 @@ function handleRenameFile(oldName, newName) {
     state.activeFile = trimmed;
   }
   fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles], state.images);
-  scheduleSnapshot();
+  sendSnapshotNow();
 }
 
 function handleDeleteFile(filename) {
@@ -425,7 +428,7 @@ function handleDeleteFile(filename) {
     }
   }
   fileTreeApi?.render(state.files, state.activeFile, [...state.readOnlyFiles], state.images);
-  scheduleSnapshot();
+  sendSnapshotNow();
   if (state.autoRender) {
     scheduleRender({ immediate: true });
   } else {
